@@ -5,8 +5,10 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
 # Create SQLAlchemy engine
+# Convert DATABASE_URL to string to avoid MultiHostUrl issues
+database_url = str(settings.DATABASE_URL)
 engine = create_engine(
-    settings.DATABASE_URL,
+    database_url,
     pool_pre_ping=True,
     echo=settings.DEBUG,
     connect_args={},
