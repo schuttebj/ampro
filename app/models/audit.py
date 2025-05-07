@@ -97,7 +97,7 @@ class Transaction(BaseModel):
     # Additional details
     amount = Column(Integer, nullable=True)  # Amount in cents if payment
     notes = Column(Text, nullable=True)
-    metadata = Column(JSON, nullable=True)
+    transaction_metadata = Column(JSON, nullable=True)
     
     # Relationships
     user = relationship("User")

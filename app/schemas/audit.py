@@ -1,8 +1,14 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime
 from pydantic import BaseModel
 
 from app.models.audit import ActionType, ResourceType, TransactionType, TransactionStatus
+
+# Avoid circular imports
+if TYPE_CHECKING:
+    from app.schemas.user import User
+    from app.schemas.citizen import Citizen
+    from app.schemas.license import License, LicenseApplication
 
 
 class AuditLogBase(BaseModel):
@@ -63,7 +69,7 @@ class TransactionBase(BaseModel):
     completed_at: Optional[datetime] = None
     amount: Optional[int] = None
     notes: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    transaction_metadata: Optional[Dict[str, Any]] = None
 
 
 class TransactionCreate(TransactionBase):
@@ -106,11 +112,7 @@ class TransactionDetail(Transaction):
     """
     Schema for returning detailed transaction information.
     """
-    from app.schemas.user import User
-    from app.schemas.citizen import Citizen
-    from app.schemas.license import License, LicenseApplication
-    
-    user: Optional[User] = None
-    citizen: Optional[Citizen] = None
-    license: Optional[License] = None
-    application: Optional[LicenseApplication] = None 
+    user: Optional["User"] = None
+    citizen: Optional["Citizen"] = None
+    license: Optional["License"] = None
+    application: Optional["LicenseApplication"] = None 
