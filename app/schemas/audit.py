@@ -36,6 +36,13 @@ class AuditLogCreate(AuditLogBase):
     timestamp: datetime = datetime.utcnow()
 
 
+class AuditLogUpdate(AuditLogBase):
+    """
+    Schema for updating an existing audit log entry.
+    """
+    pass
+
+
 class AuditLogInDBBase(AuditLogBase):
     """
     Base schema for audit log in DB with ID.
