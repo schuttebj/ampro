@@ -1,8 +1,12 @@
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from datetime import date
 from pydantic import BaseModel, EmailStr, Field
 
 from app.models.citizen import Gender, MaritalStatus
+
+# Avoid circular imports
+if TYPE_CHECKING:
+    from app.schemas.license import License
 
 
 class CitizenBase(BaseModel):
@@ -75,5 +79,4 @@ class CitizenDetail(Citizen):
     """
     Schema for returning detailed citizen information including licenses.
     """
-    from app.schemas.license import License
-    licenses: List[License] = [] 
+    licenses: List["License"] = [] 

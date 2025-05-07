@@ -1,8 +1,13 @@
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING, Any
 from datetime import date, datetime
 from pydantic import BaseModel, Field
 
 from app.models.license import LicenseCategory, LicenseStatus, ApplicationStatus
+
+# Avoid circular imports
+if TYPE_CHECKING:
+    from app.schemas.citizen import Citizen
+    from app.schemas.user import User
 
 
 class LicenseBase(BaseModel):
@@ -62,8 +67,7 @@ class LicenseWithCitizen(License):
     """
     Schema for returning license with citizen information.
     """
-    from app.schemas.citizen import Citizen
-    citizen: Citizen
+    citizen: "Citizen"
 
 
 # Application schemas
@@ -123,9 +127,6 @@ class LicenseApplicationDetail(LicenseApplication):
     """
     Schema for returning detailed license application information.
     """
-    from app.schemas.citizen import Citizen
-    from app.schemas.user import User
-    
-    citizen: Optional[Citizen] = None
-    reviewer: Optional[User] = None
+    citizen: Optional["Citizen"] = None
+    reviewer: Optional["User"] = None
     license: Optional[License] = None 
