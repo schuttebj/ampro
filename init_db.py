@@ -2,6 +2,7 @@ import logging
 import os
 import sqlalchemy
 from sqlalchemy.orm import Session
+from sqlalchemy import inspect
 from app.db.session import SessionLocal, engine
 from app import crud, models
 from app.core.config import settings
@@ -9,6 +10,22 @@ from app.schemas.user import UserCreate
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def create_tables_if_not_exist():
+    """
+    Create tables if they don't exist
+    """
+    try:
+        inspector = inspect(engine)
+        if not inspector.has_table("user"):
+            logger.info("Tables don't exist. Creating tables...")
+            models.Base.metadata.create_all(bind=engine)
+            logger.info("Tables created")
+            return True
+    except Exception as e:
+        logger.error(f"Error checking/creating tables: {str(e)}")
+    return False
 
 
 def init_db(db: Session) -> None:
@@ -59,6 +76,12 @@ def main() -> None:
     Main function to run when script is executed.
     """
     logger.info("Creating initial data")
+    
+    # Check if tables exist, create them if they don't
+    tables_created = create_tables_if_not_exist()
+    if tables_created:
+        logger.info("Tables created, continuing with initialization")
+    
     db = SessionLocal()
     try:
         init_db(db)

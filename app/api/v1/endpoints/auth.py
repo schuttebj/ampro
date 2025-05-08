@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 from app import crud
 from app.api.v1.dependencies import get_db
 from app.core.config import settings
-from app.core.security import create_access_token
+from app.core.security import create_access_token, get_current_active_user
 from app.models.audit import ActionType, ResourceType
+from app.models.user import User
 from app.schemas.token import Token
-from app.schemas.user import User
+from app.schemas.user import User as UserSchema
 
 router = APIRouter()
 
@@ -57,8 +58,8 @@ def login_access_token(
     return {"access_token": token, "token_type": "bearer"}
 
 
-@router.post("/test-token", response_model=User)
-def test_token(current_user: User = Depends(crud.user.get_current_active_user)) -> Any:
+@router.post("/test-token", response_model=UserSchema)
+def test_token(current_user: User = Depends(get_current_active_user)) -> Any:
     """
     Test access token.
     """
