@@ -1,14 +1,15 @@
-from typing import Any, List
+from typing import Any, List, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+from fastapi.encoders import jsonable_encoder
 
 from app import crud
 from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
 from app.models.audit import ActionType, ResourceType
 from app.models.user import User
-from app.schemas.audit import Transaction, TransactionDetail
+from app.schemas.audit import Transaction
 
 router = APIRouter()
 
@@ -39,7 +40,7 @@ def read_transactions(
     return transactions
 
 
-@router.get("/{transaction_id}", response_model=TransactionDetail)
+@router.get("/{transaction_id}", response_model=Dict)
 def read_transaction(
     transaction_id: int,
     db: Session = Depends(get_db),
@@ -67,10 +68,11 @@ def read_transaction(
         }
     )
     
-    return transaction
+    # Convert to dict to avoid pydantic validation issues
+    return jsonable_encoder(transaction)
 
 
-@router.get("/ref/{transaction_ref}", response_model=TransactionDetail)
+@router.get("/ref/{transaction_ref}", response_model=Dict)
 def read_transaction_by_ref(
     transaction_ref: str,
     db: Session = Depends(get_db),
@@ -98,7 +100,8 @@ def read_transaction_by_ref(
         }
     )
     
-    return transaction
+    # Convert to dict to avoid pydantic validation issues
+    return jsonable_encoder(transaction)
 
 
 @router.get("/citizen/{citizen_id}", response_model=List[Transaction])

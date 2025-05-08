@@ -118,8 +118,10 @@ class Transaction(TransactionInDBBase):
 class TransactionDetail(Transaction):
     """
     Schema for returning detailed transaction information.
+    Use simple attributes to avoid circular references
     """
-    user: Optional["User"] = None
-    citizen: Optional["Citizen"] = None
-    license: Optional["License"] = None
-    application: Optional["LicenseApplication"] = None 
+    # Using ID references instead of nested objects to avoid circular references
+    user_id: Optional[int] = None
+    citizen_id: Optional[int] = None
+    license_id: Optional[int] = None
+    application_id: Optional[int] = None 
