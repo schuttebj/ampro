@@ -3,8 +3,8 @@ from datetime import date, datetime, timedelta
 import random
 from faker import Faker
 
-# Initialize faker for South African content
-fake = Faker('en_ZA')
+# Initialize faker with a valid locale (en_US instead of en_ZA which doesn't exist)
+fake = Faker('en_US')
 
 
 class ExternalCitizenDB:
