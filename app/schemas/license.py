@@ -63,16 +63,12 @@ class License(LicenseInDBBase):
     pass
 
 
-# Use forward references for other models
-CitizenRef = ForwardRef('Citizen')
-UserRef = ForwardRef('User')
-
-
+# Instead of using forward references, we'll handle serialization at the API level
 class LicenseWithCitizen(License):
     """
     Schema for returning license with citizen information.
     """
-    citizen: Optional[CitizenRef] = None
+    pass  # Citizen will be handled at the API level with jsonable_encoder
 
 
 # Application schemas
@@ -132,10 +128,8 @@ class LicenseApplicationDetail(LicenseApplication):
     """
     Schema for returning detailed license application information.
     """
-    citizen: Optional[CitizenRef] = None
-    reviewer: Optional[UserRef] = None
-    license: Optional[License] = None
+    pass  # Citizen, reviewer, and license will be handled at the API level with jsonable_encoder
 
 
-# DO NOT import and resolve forward refs here to avoid circular imports
-# This will be done when the application starts 
+# No need to import and resolve forward refs as we're using dictionaries at the API level
+# This avoids circular import issues

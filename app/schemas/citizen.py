@@ -75,16 +75,11 @@ class Citizen(CitizenInDBBase):
     pass
 
 
-# Use ForwardRef for License
-LicenseRef = ForwardRef('License')
-
-
 class CitizenDetail(Citizen):
     """
     Schema for returning detailed citizen information including licenses.
     """
-    licenses: List[LicenseRef] = []
-
+    pass  # Licenses will be handled at the API level with jsonable_encoder
 
 # Update forward references at the end of the module
 # This is moved to main.py to avoid circular imports 

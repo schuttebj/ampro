@@ -153,8 +153,18 @@ def read_application(
         }
     )
     
+    # Get related data
+    citizen = crud.citizen.get(db, id=application.citizen_id) if application.citizen_id else None
+    reviewer = crud.user.get(db, id=application.reviewed_by) if application.reviewed_by else None
+    license = crud.license.get(db, id=application.approved_license_id) if application.approved_license_id else None
+    
     # Convert to dict to avoid pydantic validation issues
-    return jsonable_encoder(application)
+    result = jsonable_encoder(application)
+    result["citizen"] = jsonable_encoder(citizen) if citizen else None
+    result["reviewer"] = jsonable_encoder(reviewer) if reviewer else None
+    result["license"] = jsonable_encoder(license) if license else None
+    
+    return result
 
 
 @router.put("/{application_id}", response_model=LicenseApplication)

@@ -200,8 +200,9 @@ def read_citizen_licenses(
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Get citizen with their licenses.
+    Get all licenses for a citizen.
     """
+    # Get citizen with licenses
     citizen = crud.citizen.get_with_licenses(db, id=citizen_id)
     if not citizen:
         raise HTTPException(
@@ -222,8 +223,10 @@ def read_citizen_licenses(
     )
     
     # Convert to dict to avoid pydantic validation issues
-    citizen_dict = jsonable_encoder(citizen)
-    return citizen_dict
+    return {
+        "citizen": jsonable_encoder(citizen),
+        "licenses": jsonable_encoder(citizen.licenses)
+    }
 
 
 @router.delete("/{citizen_id}", response_model=Citizen)

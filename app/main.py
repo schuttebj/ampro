@@ -15,11 +15,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import schemas for resolving forward references
-from app.schemas.license import License, LicenseWithCitizen, LicenseApplicationDetail
-from app.schemas.citizen import Citizen, CitizenDetail
-from app.schemas.user import User
-
 # Create FastAPI app
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -44,14 +39,6 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
-# Resolve forward references
-try:
-    CitizenDetail.update_forward_refs()
-    LicenseWithCitizen.update_forward_refs()
-    LicenseApplicationDetail.update_forward_refs()
-except Exception as e:
-    print(f"Error resolving forward references: {e}")
 
 @app.get("/")
 async def root():
