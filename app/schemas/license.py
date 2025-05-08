@@ -63,15 +63,16 @@ class License(LicenseInDBBase):
     pass
 
 
-# Define a forward reference for the LicenseWithCitizen class that depends on Citizen
+# Use forward references for other models
 CitizenRef = ForwardRef('Citizen')
+UserRef = ForwardRef('User')
 
 
 class LicenseWithCitizen(License):
     """
     Schema for returning license with citizen information.
     """
-    citizen: CitizenRef = None
+    citizen: Optional[CitizenRef] = None
 
 
 # Application schemas
@@ -127,10 +128,6 @@ class LicenseApplication(LicenseApplicationInDBBase):
     pass
 
 
-# Define forward references for LicenseApplicationDetail
-UserRef = ForwardRef('User')
-
-
 class LicenseApplicationDetail(LicenseApplication):
     """
     Schema for returning detailed license application information.
@@ -140,9 +137,5 @@ class LicenseApplicationDetail(LicenseApplication):
     license: Optional[License] = None
 
 
-# Update forward references
-from app.schemas.citizen import Citizen
-from app.schemas.user import User
-
-LicenseWithCitizen.update_forward_refs()
-LicenseApplicationDetail.update_forward_refs() 
+# DO NOT import and resolve forward refs here to avoid circular imports
+# This will be done when the application starts 

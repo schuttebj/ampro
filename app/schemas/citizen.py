@@ -1,4 +1,4 @@
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING, ForwardRef
 from datetime import date
 from pydantic import BaseModel, EmailStr, Field
 
@@ -75,8 +75,17 @@ class Citizen(CitizenInDBBase):
     pass
 
 
+# Use ForwardRef for License
+LicenseRef = ForwardRef('License')
+
+
 class CitizenDetail(Citizen):
     """
     Schema for returning detailed citizen information including licenses.
     """
-    licenses: List["License"] = [] 
+    licenses: List[LicenseRef] = []
+
+
+# Update forward references at the end of the module
+from app.schemas.license import License
+CitizenDetail.update_forward_refs() 

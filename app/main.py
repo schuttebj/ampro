@@ -15,14 +15,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import schemas for resolving forward references
+from app.schemas.license import License, LicenseWithCitizen, LicenseApplicationDetail
+from app.schemas.citizen import Citizen, CitizenDetail
+from app.schemas.user import User
+
+# Create FastAPI app
 app = FastAPI(
     title=settings.PROJECT_NAME,
+    description="API for driver's license processing system",
+    version="1.0.0",
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
-    description="API for Driver's License Printing System",
-    version="0.1.0",
+    docs_url=f"{settings.API_V1_PREFIX}/docs",
+    redoc_url=f"{settings.API_V1_PREFIX}/redoc",
 )
 
-# Set up CORS middleware
+# Set all CORS enabled origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, replace with specific origins
@@ -36,6 +44,14 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+# Resolve forward references
+try:
+    CitizenDetail.update_forward_refs()
+    LicenseWithCitizen.update_forward_refs()
+    LicenseApplicationDetail.update_forward_refs()
+except Exception as e:
+    print(f"Error resolving forward references: {e}")
 
 @app.get("/")
 async def root():
