@@ -75,7 +75,7 @@ def generate_test_data(
     """
     Generate test data for the system. Only for superusers.
     """
-    fake = Faker('en_ZA')  # South African locale
+    fake = Faker('en_US')  # Use English (US) locale instead of en_ZA
     
     # Generate citizens
     created_citizens = []
@@ -318,7 +318,7 @@ async def bulk_generate_citizens(
     
     async def generate_citizens_background(count: int, batch_size: int = 1000):
         """Background task to generate citizens in batches"""
-        fake = Faker(['en_ZA', 'en_US'])
+        fake = Faker('en_US')  # Use only en_US locale
         
         # Audit log for start
         crud.audit_log.create(
