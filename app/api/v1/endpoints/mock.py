@@ -540,57 +540,30 @@ async def bulk_generate_citizens(
     }
 
 
-@router.get("/db-status", response_model=Dict[str, Any])
-def get_db_status(
+@router.get("/citizen-count", response_model=Dict[str, Any])
+def get_citizen_count(
     *,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> Any:
     """
-    Get database status with record counts for various entities.
+    Get the total number of citizens in the database.
     Only accessible to superusers.
     """
     try:
-        # Count records in each main table
-        user_count = db.query(User).count()
-        
         # Import models
         from app.models.citizen import Citizen
-        from app.models.license import License, LicenseApplication
-        from app.models.transaction import Transaction
-        from app.models.audit import AuditLog
         
+        # Count citizens
         citizen_count = db.query(Citizen).count()
-        license_count = db.query(License).count()
-        application_count = db.query(LicenseApplication).count()
-        transaction_count = db.query(Transaction).count()
-        audit_log_count = db.query(AuditLog).count()
-        
-        # Get database connection info
-        conn_info = "Unknown"
-        try:
-            conn_info = str(db.bind.url).replace(':*@', ':***@')  # Hide password
-        except Exception:
-            conn_info = "Could not retrieve connection info"
         
         return {
             "status": "ok",
-            "database_connection": conn_info,
-            "counts": {
-                "users": user_count,
-                "citizens": citizen_count,
-                "licenses": license_count,
-                "applications": application_count,
-                "transactions": transaction_count,
-                "audit_logs": audit_log_count,
-            }
+            "count": citizen_count,
+            "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        
         return {
             "status": "error",
-            "error": str(e),
-            "error_details": error_details
+            "error": str(e)
         } 
