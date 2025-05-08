@@ -87,5 +87,4 @@ class CitizenDetail(Citizen):
 
 
 # Update forward references at the end of the module
-from app.schemas.license import License
-CitizenDetail.update_forward_refs() 
+# This is moved to main.py to avoid circular imports 
