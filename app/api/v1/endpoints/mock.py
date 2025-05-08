@@ -372,7 +372,7 @@ async def bulk_generate_citizens(
             db,
             obj_in={
                 "user_id": current_user.id,
-                "action_type": ActionType.SYSTEM,
+                "action_type": ActionType.CREATE,
                 "resource_type": ResourceType.SYSTEM,
                 "description": f"Started bulk generation of {count} citizens with batch size {batch_size}"
             }
@@ -473,7 +473,7 @@ async def bulk_generate_citizens(
                         batch_db,
                         obj_in={
                             "user_id": current_user.id,
-                            "action_type": ActionType.SYSTEM,
+                            "action_type": ActionType.CREATE,
                             "resource_type": ResourceType.SYSTEM,
                             "description": progress_message
                         }
@@ -495,7 +495,7 @@ async def bulk_generate_citizens(
                         db,  # Use the main DB session
                         obj_in={
                             "user_id": current_user.id,
-                            "action_type": ActionType.ERROR,
+                            "action_type": ActionType.CREATE,
                             "resource_type": ResourceType.SYSTEM,
                             "description": f"Error in bulk generation batch: {str(e)}"
                         }
@@ -524,7 +524,7 @@ async def bulk_generate_citizens(
             db,
             obj_in={
                 "user_id": current_user.id,
-                "action_type": ActionType.SYSTEM,
+                "action_type": ActionType.CREATE,
                 "resource_type": ResourceType.SYSTEM,
                 "description": completion_message
             }
