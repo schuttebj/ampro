@@ -7,6 +7,7 @@ from faker import Faker
 import random
 from datetime import date, datetime, timedelta
 from fastapi import BackgroundTasks
+import logging
 
 from app import crud
 from app.api.v1.dependencies import get_db
@@ -75,29 +76,32 @@ def generate_test_data(
     """
     Generate test data for the system. Only for superusers.
     """
+    logger = logging.getLogger(__name__)
+    
     fake = Faker('en_US')  # Use English (US) locale instead of en_ZA
+    
+    errors = []
     
     # Generate citizens
     created_citizens = []
-    for _ in range(num_citizens):
-        # Generate random South African ID number (13 digits)
-        # This is a simplified version and doesn't validate against the checksum
-        yy = str(random.randint(60, 99)).zfill(2)
-        mm = str(random.randint(1, 12)).zfill(2)
-        dd = str(random.randint(1, 28)).zfill(2)
-        random_digits = ''.join([str(random.randint(0, 9)) for _ in range(7)])
-        id_number = f"{yy}{mm}{dd}{random_digits}"
-        
-        gender = random.choice([Gender.MALE, Gender.FEMALE])
-        birth_year = int(f"19{yy}")
-        birth_month = int(mm)
-        birth_day = int(dd)
-        
-        # Create citizen
+    for i in range(num_citizens):
         try:
-            citizen = crud.citizen.create(
-                db,
-                obj_in={
+            # Generate random South African ID number (13 digits)
+            # This is a simplified version and doesn't validate against the checksum
+            yy = str(random.randint(60, 99)).zfill(2)
+            mm = str(random.randint(1, 12)).zfill(2)
+            dd = str(random.randint(1, 28)).zfill(2)
+            random_digits = ''.join([str(random.randint(0, 9)) for _ in range(7)])
+            id_number = f"{yy}{mm}{dd}{random_digits}"
+            
+            gender = random.choice([Gender.MALE, Gender.FEMALE])
+            birth_year = int(f"19{yy}")
+            birth_month = int(mm)
+            birth_day = int(dd)
+            
+            # Create citizen
+            try:
+                citizen_data = {
                     "id_number": id_number,
                     "first_name": fake.first_name(),
                     "last_name": fake.last_name(),
@@ -110,21 +114,32 @@ def generate_test_data(
                     "address_line1": fake.street_address(),
                     "address_line2": fake.secondary_address() if random.random() > 0.7 else None,
                     "city": fake.city(),
-                    "state_province": fake.province(),
+                    "state_province": fake.state(),  # Use state instead of province for US locale
                     "postal_code": fake.postcode(),
                     "country": "South Africa",
                     "birth_place": fake.city(),
                     "nationality": "South African",
                 }
-            )
-            created_citizens.append(citizen)
+                
+                citizen = crud.citizen.create(db, obj_in=citizen_data)
+                created_citizens.append(citizen)
+                # Log success
+                logger.info(f"Created citizen: {citizen.id_number} - {citizen.first_name} {citizen.last_name}")
+            except Exception as e:
+                # Log error and continue
+                err_msg = f"Error creating citizen {i}: {str(e)}"
+                logger.error(err_msg)
+                errors.append(err_msg)
+                continue
         except Exception as e:
-            # Skip if there's an error (like duplicate ID)
+            err_msg = f"Error generating citizen data {i}: {str(e)}"
+            logger.error(err_msg)
+            errors.append(err_msg)
             continue
     
     # Generate licenses
     created_licenses = []
-    for citizen in created_citizens[:num_licenses]:
+    for i, citizen in enumerate(created_citizens[:num_licenses]):
         try:
             license_number = crud.license.generate_license_number()
             license = crud.license.create(
@@ -141,13 +156,16 @@ def generate_test_data(
                 }
             )
             created_licenses.append(license)
+            logger.info(f"Created license: {license.license_number}")
         except Exception as e:
-            # Skip if there's an error
+            err_msg = f"Error creating license {i}: {str(e)}"
+            logger.error(err_msg)
+            errors.append(err_msg)
             continue
     
     # Generate applications
     created_applications = []
-    for citizen in created_citizens[num_licenses:num_licenses+num_applications]:
+    for i, citizen in enumerate(created_citizens[num_licenses:num_licenses+num_applications]):
         try:
             application = crud.license_application.create(
                 db,
@@ -163,13 +181,16 @@ def generate_test_data(
                 }
             )
             created_applications.append(application)
+            logger.info(f"Created application: {application.id}")
         except Exception as e:
-            # Skip if there's an error
+            err_msg = f"Error creating application {i}: {str(e)}"
+            logger.error(err_msg)
+            errors.append(err_msg)
             continue
     
     # Generate transactions
     created_transactions = []
-    for license in created_licenses:
+    for i, license in enumerate(created_licenses):
         try:
             transaction = crud.transaction.create(
                 db,
@@ -187,13 +208,16 @@ def generate_test_data(
                 }
             )
             created_transactions.append(transaction)
+            logger.info(f"Created transaction: {transaction.transaction_ref}")
         except Exception as e:
-            # Skip if there's an error
+            err_msg = f"Error creating transaction {i}: {str(e)}"
+            logger.error(err_msg)
+            errors.append(err_msg)
             continue
     
     # Generate audit logs
     created_logs = []
-    for citizen in created_citizens:
+    for i, citizen in enumerate(created_citizens):
         try:
             log = crud.audit_log.create(
                 db,
@@ -207,11 +231,14 @@ def generate_test_data(
                 }
             )
             created_logs.append(log)
+            logger.info(f"Created audit log: {log.id}")
         except Exception as e:
-            # Skip if there's an error
+            err_msg = f"Error creating audit log {i}: {str(e)}"
+            logger.error(err_msg)
+            errors.append(err_msg)
             continue
     
-    return {
+    result = {
         "message": "Test data generated successfully",
         "citizens_created": len(created_citizens),
         "licenses_created": len(created_licenses),
@@ -219,6 +246,12 @@ def generate_test_data(
         "transactions_created": len(created_transactions),
         "audit_logs_created": len(created_logs),
     }
+    
+    if errors:
+        result["errors"] = errors[:10]  # Include first 10 errors in response
+        result["error_count"] = len(errors)
+    
+    return result
 
 
 @router.post("/reset-database", response_model=Dict[str, Any])
