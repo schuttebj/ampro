@@ -8,6 +8,7 @@ import random
 from datetime import date, datetime, timedelta
 from fastapi import BackgroundTasks
 import logging
+import asyncio
 
 from app import crud
 from app.api.v1.dependencies import get_db
@@ -299,6 +300,7 @@ async def bulk_generate_citizens(
     *,
     db: Session = Depends(get_db),
     count: int = 1000,
+    batch_size: int = 100,  # Allow customizing batch size
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_active_superuser),
 ) -> Any:
@@ -308,14 +310,19 @@ async def bulk_generate_citizens(
     The generation will continue in the background.
     
     - count: Number of citizens to generate (default: 1000, max: 250000)
+    - batch_size: Number of records to process in each batch (default: 100, min: 10, max: 1000)
     """
     from datetime import date, timedelta
     import random
     from faker import Faker
     import time
+    import logging
     
-    # Limit the maximum number of records
-    count = min(count, 250000)
+    logger = logging.getLogger(__name__)
+    
+    # Limit the parameters for safety
+    count = min(max(count, 1), 250000)
+    batch_size = min(max(batch_size, 10), 1000)
     
     # Function to generate a valid South African ID number
     def generate_sa_id_number(birthdate: date, gender: str) -> str:
@@ -349,61 +356,61 @@ async def bulk_generate_citizens(
         
         return f"{id_partial}{check_digit}"
     
-    async def generate_citizens_background(count: int, batch_size: int = 1000):
+    async def generate_citizens_background(count: int, batch_size: int = 100):
         """Background task to generate citizens in batches"""
         fake = Faker('en_US')  # Use only en_US locale
         
-        # Audit log for start
+        # Initialize storage for stats
+        start_time = time.time()
+        created_count = 0
+        error_count = 0
+        last_log_time = start_time
+        
+        # Log start of process
+        logger.info(f"Starting bulk generation of {count} citizens with batch size {batch_size}")
         crud.audit_log.create(
             db,
             obj_in={
                 "user_id": current_user.id,
                 "action_type": ActionType.SYSTEM,
                 "resource_type": ResourceType.SYSTEM,
-                "description": f"Started bulk generation of {count} citizens"
+                "description": f"Started bulk generation of {count} citizens with batch size {batch_size}"
             }
         )
         
-        start_time = time.time()
-        created_count = 0
-        
         # Process in batches
         for batch_start in range(0, count, batch_size):
+            batch_time_start = time.time()
+            
             # Calculate batch size (may be smaller for the last batch)
             current_batch_size = min(batch_size, count - batch_start)
             batch_count = 0
+            batch_errors = 0
             
-            # Create a new session for each batch
+            # Create a new session for each batch for isolation
             batch_db = SessionLocal()
             
             try:
-                # Generate citizens for this batch
+                # Pre-generate the citizen data for this batch to minimize database open time
+                citizens_to_create = []
                 for _ in range(current_batch_size):
-                    # Generate basic demographics
-                    gender = random.choice(["male", "female"])
-                    gender_enum = Gender.MALE if gender == "male" else Gender.FEMALE
-                    
-                    # Generate birth date (18-90 years old)
-                    age = random.randint(18, 90)
-                    birthdate = date.today() - timedelta(days=age*365 + random.randint(0, 364))
-                    
-                    # Generate ID number based on birthdate and gender
-                    id_number = generate_sa_id_number(birthdate, gender)
-                    
-                    # Skip if ID already exists
-                    existing = crud.citizen.get_by_id_number(batch_db, id_number=id_number)
-                    if existing:
-                        continue
-                    
-                    # Generate name based on gender
-                    if gender == "male":
-                        first_name = fake.first_name_male()
-                    else:
-                        first_name = fake.first_name_female()
-                    
-                    # Create citizen
                     try:
-                        citizen_in = {
+                        # Generate basic demographics
+                        gender = random.choice(["male", "female"])
+                        gender_enum = Gender.MALE if gender == "male" else Gender.FEMALE
+                        
+                        # Generate birth date (18-90 years old)
+                        age = random.randint(18, 90)
+                        birthdate = date.today() - timedelta(days=age*365 + random.randint(0, 364))
+                        
+                        # Generate ID number based on birthdate and gender
+                        id_number = generate_sa_id_number(birthdate, gender)
+                        
+                        # Generate name based on gender
+                        first_name = fake.first_name_male() if gender == "male" else fake.first_name_female()
+                        
+                        # Create citizen dictionary
+                        citizen = {
                             "id_number": id_number,
                             "first_name": first_name,
                             "last_name": fake.last_name(),
@@ -416,71 +423,174 @@ async def bulk_generate_citizens(
                             "address_line1": fake.street_address(),
                             "address_line2": fake.secondary_address() if random.random() > 0.7 else None,
                             "city": fake.city(),
-                            "state_province": fake.province(),
+                            "state_province": fake.state(),
                             "postal_code": fake.postcode(),
                             "country": "South Africa",
                             "birth_place": fake.city(),
                             "nationality": "South African",
                         }
+                        citizens_to_create.append(citizen)
+                    except Exception as e:
+                        logger.error(f"Error pre-generating citizen data: {str(e)}")
+                        batch_errors += 1
+                
+                # Now insert all the pre-generated citizens, skipping any that already exist
+                for citizen_data in citizens_to_create:
+                    try:
+                        # Check if ID already exists - faster than catching an exception
+                        existing = crud.citizen.get_by_id_number(batch_db, id_number=citizen_data["id_number"])
+                        if existing:
+                            continue
                         
-                        crud.citizen.create(batch_db, obj_in=citizen_in)
+                        # Create the citizen record
+                        crud.citizen.create(batch_db, obj_in=citizen_data)
                         batch_count += 1
                     except Exception as e:
-                        # Skip if there's an error (like duplicate ID)
-                        continue
+                        logger.error(f"Error creating citizen with ID {citizen_data.get('id_number')}: {str(e)}")
+                        batch_errors += 1
                 
-                # Commit the batch
+                # Commit the batch as a single transaction
                 batch_db.commit()
-                created_count += batch_count
                 
-                # Log progress periodically
-                if batch_start % (batch_size * 10) == 0 and batch_start > 0:
-                    elapsed = time.time() - start_time
+                # Update counters
+                created_count += batch_count
+                error_count += batch_errors
+                
+                # Log progress periodically (every 5000 records or 30 seconds)
+                current_time = time.time()
+                if created_count % 5000 == 0 or (current_time - last_log_time) > 30:
+                    elapsed = current_time - start_time
                     rate = created_count / elapsed if elapsed > 0 else 0
+                    batch_time = current_time - batch_time_start
                     
-                    # Log progress
+                    progress_message = (
+                        f"Bulk generation progress: {created_count}/{count} citizens created "
+                        f"({rate:.1f} records/second, last batch: {batch_count} records in {batch_time:.2f}s)"
+                    )
+                    
+                    logger.info(progress_message)
                     crud.audit_log.create(
                         batch_db,
                         obj_in={
                             "user_id": current_user.id,
                             "action_type": ActionType.SYSTEM,
                             "resource_type": ResourceType.SYSTEM,
-                            "description": f"Bulk generation progress: {created_count}/{count} citizens created ({rate:.1f} records/second)"
+                            "description": progress_message
                         }
                     )
+                    last_log_time = current_time
+                
+                # Small sleep to prevent overloading the database
+                await asyncio.sleep(0.1)
             
             except Exception as e:
+                # Handle batch-level errors
                 batch_db.rollback()
-                # Log error
-                crud.audit_log.create(
-                    db,
-                    obj_in={
-                        "user_id": current_user.id,
-                        "action_type": ActionType.ERROR,
-                        "resource_type": ResourceType.SYSTEM,
-                        "description": f"Error in bulk generation batch: {str(e)}"
-                    }
-                )
+                logger.error(f"Error in bulk generation batch: {str(e)}")
+                error_count += current_batch_size  # Assume all records in the batch failed
+                
+                # Log the error
+                try:
+                    crud.audit_log.create(
+                        db,  # Use the main DB session
+                        obj_in={
+                            "user_id": current_user.id,
+                            "action_type": ActionType.ERROR,
+                            "resource_type": ResourceType.SYSTEM,
+                            "description": f"Error in bulk generation batch: {str(e)}"
+                        }
+                    )
+                except Exception:
+                    # If we can't even log the error, just continue
+                    pass
+                
+                # Wait a bit longer before retrying after errors
+                await asyncio.sleep(1)
             finally:
+                # Always close the batch session
                 batch_db.close()
         
-        # Final audit log
+        # Final audit log with summary
         total_time = time.time() - start_time
+        rate = created_count / total_time if total_time > 0 else 0
+        
+        completion_message = (
+            f"Completed bulk generation: {created_count} citizens created, {error_count} errors, "
+            f"in {total_time:.1f} seconds ({rate:.1f} records/second)"
+        )
+        
+        logger.info(completion_message)
         crud.audit_log.create(
             db,
             obj_in={
                 "user_id": current_user.id,
                 "action_type": ActionType.SYSTEM,
                 "resource_type": ResourceType.SYSTEM,
-                "description": f"Completed bulk generation of {created_count} citizens in {total_time:.1f} seconds"
+                "description": completion_message
             }
         )
     
     # Start the background task
-    background_tasks.add_task(generate_citizens_background, count)
+    background_tasks.add_task(generate_citizens_background, count, batch_size)
     
     return {
-        "message": f"Started bulk generation of {count} citizens in the background",
+        "message": f"Started bulk generation of {count} citizens in the background with batch size {batch_size}",
         "status": "processing",
         "check_progress": "Use the /api/v1/audit endpoint to check progress logs"
-    } 
+    }
+
+
+@router.get("/db-status", response_model=Dict[str, Any])
+def get_db_status(
+    *,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_superuser),
+) -> Any:
+    """
+    Get database status with record counts for various entities.
+    Only accessible to superusers.
+    """
+    try:
+        # Count records in each main table
+        user_count = db.query(User).count()
+        
+        # Import models
+        from app.models.citizen import Citizen
+        from app.models.license import License, LicenseApplication
+        from app.models.transaction import Transaction
+        from app.models.audit import AuditLog
+        
+        citizen_count = db.query(Citizen).count()
+        license_count = db.query(License).count()
+        application_count = db.query(LicenseApplication).count()
+        transaction_count = db.query(Transaction).count()
+        audit_log_count = db.query(AuditLog).count()
+        
+        # Get database connection info
+        conn_info = "Unknown"
+        try:
+            conn_info = str(db.bind.url).replace(':*@', ':***@')  # Hide password
+        except Exception:
+            conn_info = "Could not retrieve connection info"
+        
+        return {
+            "status": "ok",
+            "database_connection": conn_info,
+            "counts": {
+                "users": user_count,
+                "citizens": citizen_count,
+                "licenses": license_count,
+                "applications": application_count,
+                "transactions": transaction_count,
+                "audit_logs": audit_log_count,
+            }
+        }
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        
+        return {
+            "status": "error",
+            "error": str(e),
+            "error_details": error_details
+        } 
