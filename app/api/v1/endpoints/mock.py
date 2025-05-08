@@ -6,6 +6,7 @@ import faker
 from faker import Faker
 import random
 from datetime import date, datetime, timedelta
+from fastapi import BackgroundTasks
 
 from app import crud
 from app.api.v1.dependencies import get_db
@@ -256,4 +257,196 @@ def reset_database(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reset database: {str(e)}",
-        ) 
+        )
+
+
+@router.post("/bulk-generate-citizens", response_model=Dict[str, Any])
+async def bulk_generate_citizens(
+    *,
+    db: Session = Depends(get_db),
+    count: int = 1000,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_active_superuser),
+) -> Any:
+    """
+    Generate a large number of citizen records in the background.
+    This endpoint will start the generation process and return immediately.
+    The generation will continue in the background.
+    
+    - count: Number of citizens to generate (default: 1000, max: 250000)
+    """
+    from datetime import date, timedelta
+    import random
+    from faker import Faker
+    import time
+    
+    # Limit the maximum number of records
+    count = min(count, 250000)
+    
+    # Function to generate a valid South African ID number
+    def generate_sa_id_number(birthdate: date, gender: str) -> str:
+        # Format birth date components
+        yy = birthdate.strftime("%y")
+        mm = birthdate.strftime("%m")
+        dd = birthdate.strftime("%d")
+        
+        # Gender and sequence
+        g = random.randint(0, 4) if gender.lower() == "female" else random.randint(5, 9)
+        s = random.randint(100, 999)
+        
+        # Citizenship and fixed value
+        c = 0  # South African citizen
+        a = 8  # Fixed value
+        
+        # Create the first 12 digits
+        id_partial = f"{yy}{mm}{dd}{g}{s}{c}{a}"
+        
+        # Calculate checksum (Luhn algorithm)
+        total = 0
+        for i, digit in enumerate(id_partial):
+            value = int(digit)
+            if i % 2 == 0:  # Even positions (0-based indexing)
+                total += value
+            else:  # Odd positions
+                doubled = value * 2
+                total += doubled if doubled < 10 else doubled - 9
+        
+        check_digit = (10 - (total % 10)) % 10
+        
+        return f"{id_partial}{check_digit}"
+    
+    async def generate_citizens_background(count: int, batch_size: int = 1000):
+        """Background task to generate citizens in batches"""
+        fake = Faker(['en_ZA', 'en_US'])
+        
+        # Audit log for start
+        crud.audit_log.create(
+            db,
+            obj_in={
+                "user_id": current_user.id,
+                "action_type": ActionType.SYSTEM,
+                "resource_type": ResourceType.SYSTEM,
+                "description": f"Started bulk generation of {count} citizens"
+            }
+        )
+        
+        start_time = time.time()
+        created_count = 0
+        
+        # Process in batches
+        for batch_start in range(0, count, batch_size):
+            # Calculate batch size (may be smaller for the last batch)
+            current_batch_size = min(batch_size, count - batch_start)
+            batch_count = 0
+            
+            # Create a new session for each batch
+            batch_db = SessionLocal()
+            
+            try:
+                # Generate citizens for this batch
+                for _ in range(current_batch_size):
+                    # Generate basic demographics
+                    gender = random.choice(["male", "female"])
+                    gender_enum = Gender.MALE if gender == "male" else Gender.FEMALE
+                    
+                    # Generate birth date (18-90 years old)
+                    age = random.randint(18, 90)
+                    birthdate = date.today() - timedelta(days=age*365 + random.randint(0, 364))
+                    
+                    # Generate ID number based on birthdate and gender
+                    id_number = generate_sa_id_number(birthdate, gender)
+                    
+                    # Skip if ID already exists
+                    existing = crud.citizen.get_by_id_number(batch_db, id_number=id_number)
+                    if existing:
+                        continue
+                    
+                    # Generate name based on gender
+                    if gender == "male":
+                        first_name = fake.first_name_male()
+                    else:
+                        first_name = fake.first_name_female()
+                    
+                    # Create citizen
+                    try:
+                        citizen_in = {
+                            "id_number": id_number,
+                            "first_name": first_name,
+                            "last_name": fake.last_name(),
+                            "middle_name": fake.first_name() if random.random() > 0.7 else None,
+                            "date_of_birth": birthdate,
+                            "gender": gender_enum,
+                            "marital_status": random.choice(list(MaritalStatus)),
+                            "phone_number": fake.phone_number(),
+                            "email": fake.email(),
+                            "address_line1": fake.street_address(),
+                            "address_line2": fake.secondary_address() if random.random() > 0.7 else None,
+                            "city": fake.city(),
+                            "state_province": fake.province(),
+                            "postal_code": fake.postcode(),
+                            "country": "South Africa",
+                            "birth_place": fake.city(),
+                            "nationality": "South African",
+                        }
+                        
+                        crud.citizen.create(batch_db, obj_in=citizen_in)
+                        batch_count += 1
+                    except Exception as e:
+                        # Skip if there's an error (like duplicate ID)
+                        continue
+                
+                # Commit the batch
+                batch_db.commit()
+                created_count += batch_count
+                
+                # Log progress periodically
+                if batch_start % (batch_size * 10) == 0 and batch_start > 0:
+                    elapsed = time.time() - start_time
+                    rate = created_count / elapsed if elapsed > 0 else 0
+                    
+                    # Log progress
+                    crud.audit_log.create(
+                        batch_db,
+                        obj_in={
+                            "user_id": current_user.id,
+                            "action_type": ActionType.SYSTEM,
+                            "resource_type": ResourceType.SYSTEM,
+                            "description": f"Bulk generation progress: {created_count}/{count} citizens created ({rate:.1f} records/second)"
+                        }
+                    )
+            
+            except Exception as e:
+                batch_db.rollback()
+                # Log error
+                crud.audit_log.create(
+                    db,
+                    obj_in={
+                        "user_id": current_user.id,
+                        "action_type": ActionType.ERROR,
+                        "resource_type": ResourceType.SYSTEM,
+                        "description": f"Error in bulk generation batch: {str(e)}"
+                    }
+                )
+            finally:
+                batch_db.close()
+        
+        # Final audit log
+        total_time = time.time() - start_time
+        crud.audit_log.create(
+            db,
+            obj_in={
+                "user_id": current_user.id,
+                "action_type": ActionType.SYSTEM,
+                "resource_type": ResourceType.SYSTEM,
+                "description": f"Completed bulk generation of {created_count} citizens in {total_time:.1f} seconds"
+            }
+        )
+    
+    # Start the background task
+    background_tasks.add_task(generate_citizens_background, count)
+    
+    return {
+        "message": f"Started bulk generation of {count} citizens in the background",
+        "status": "processing",
+        "check_progress": "Use the /api/v1/audit endpoint to check progress logs"
+    } 
