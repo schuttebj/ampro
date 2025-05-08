@@ -4,7 +4,8 @@ import sqlalchemy
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect
 from app.db.session import SessionLocal, engine
-from app import crud, models
+from app import crud
+from app.models.base import Base
 from app.core.config import settings
 from app.schemas.user import UserCreate
 
@@ -20,7 +21,7 @@ def create_tables_if_not_exist():
         inspector = inspect(engine)
         if not inspector.has_table("user"):
             logger.info("Tables don't exist. Creating tables...")
-            models.Base.metadata.create_all(bind=engine)
+            Base.metadata.create_all(bind=engine)
             logger.info("Tables created")
             return True
     except Exception as e:

@@ -1,4 +1,4 @@
-from typing import Optional, List, TYPE_CHECKING, Any
+from typing import Optional, List, TYPE_CHECKING, Any, Union, Dict, ForwardRef
 from datetime import date, datetime
 from pydantic import BaseModel, Field
 
@@ -63,11 +63,15 @@ class License(LicenseInDBBase):
     pass
 
 
+# Define a forward reference for the LicenseWithCitizen class that depends on Citizen
+CitizenRef = ForwardRef('Citizen')
+
+
 class LicenseWithCitizen(License):
     """
     Schema for returning license with citizen information.
     """
-    citizen: "Citizen"
+    citizen: CitizenRef = None
 
 
 # Application schemas
@@ -123,10 +127,22 @@ class LicenseApplication(LicenseApplicationInDBBase):
     pass
 
 
+# Define forward references for LicenseApplicationDetail
+UserRef = ForwardRef('User')
+
+
 class LicenseApplicationDetail(LicenseApplication):
     """
     Schema for returning detailed license application information.
     """
-    citizen: Optional["Citizen"] = None
-    reviewer: Optional["User"] = None
-    license: Optional[License] = None 
+    citizen: Optional[CitizenRef] = None
+    reviewer: Optional[UserRef] = None
+    license: Optional[License] = None
+
+
+# Update forward references
+from app.schemas.citizen import Citizen
+from app.schemas.user import User
+
+LicenseWithCitizen.update_forward_refs()
+LicenseApplicationDetail.update_forward_refs() 
