@@ -16,6 +16,7 @@ from app.models.license import LicenseCategory, LicenseStatus, ApplicationStatus
 from app.models.audit import ActionType, ResourceType, TransactionType, TransactionStatus
 from app.models.user import User
 from app.schemas.user import UserCreate
+from app.db.session import SessionLocal
 
 router = APIRouter()
 
