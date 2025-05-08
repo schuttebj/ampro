@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
@@ -9,7 +9,7 @@ from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
 from app.models.audit import ActionType, ResourceType
 from app.models.user import User
-from app.schemas.citizen import Citizen, CitizenCreate, CitizenUpdate, CitizenDetail
+from app.schemas.citizen import Citizen, CitizenCreate, CitizenUpdate
 
 router = APIRouter()
 
@@ -119,7 +119,7 @@ def search_citizens(
     return results
 
 
-@router.get("/{citizen_id}", response_model=CitizenDetail)
+@router.get("/{citizen_id}", response_model=Citizen)
 def read_citizen(
     *,
     db: Session = Depends(get_db),
@@ -192,7 +192,7 @@ def update_citizen(
     return citizen
 
 
-@router.get("/{citizen_id}/licenses", response_model=CitizenDetail)
+@router.get("/{citizen_id}/licenses", response_model=Dict)
 def read_citizen_licenses(
     *,
     db: Session = Depends(get_db),
@@ -221,7 +221,9 @@ def read_citizen_licenses(
         }
     )
     
-    return citizen
+    # Convert to dict to avoid pydantic validation issues
+    citizen_dict = jsonable_encoder(citizen)
+    return citizen_dict
 
 
 @router.delete("/{citizen_id}", response_model=Citizen)

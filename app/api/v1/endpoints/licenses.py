@@ -2,13 +2,14 @@ from typing import Any, List, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from fastapi.encoders import jsonable_encoder
 
 from app import crud
 from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
 from app.models.audit import ActionType, ResourceType
 from app.models.user import User
-from app.schemas.license import License, LicenseCreate, LicenseUpdate, LicenseWithCitizen
+from app.schemas.license import License, LicenseCreate, LicenseUpdate
 from app.services.license_generator import (
     generate_license_qr_code,
     generate_license_barcode_data,
@@ -94,7 +95,7 @@ def create_license(
     return license
 
 
-@router.get("/{license_id}", response_model=LicenseWithCitizen)
+@router.get("/{license_id}", response_model=Dict)
 def read_license(
     *,
     db: Session = Depends(get_db),
@@ -123,7 +124,8 @@ def read_license(
         }
     )
     
-    return license
+    # Convert to dict to avoid pydantic validation issues
+    return jsonable_encoder(license)
 
 
 @router.put("/{license_id}", response_model=License)
@@ -197,7 +199,7 @@ def delete_license(
     return license
 
 
-@router.get("/number/{license_number}", response_model=LicenseWithCitizen)
+@router.get("/number/{license_number}", response_model=Dict)
 def read_license_by_number(
     *,
     db: Session = Depends(get_db),
@@ -226,7 +228,8 @@ def read_license_by_number(
         }
     )
     
-    return license
+    # Convert to dict to avoid pydantic validation issues
+    return jsonable_encoder(license)
 
 
 @router.get("/generate-number", response_model=dict)

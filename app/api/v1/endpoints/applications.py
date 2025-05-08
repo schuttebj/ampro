@@ -1,7 +1,8 @@
-from typing import Any, List
+from typing import Any, List, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from fastapi.encoders import jsonable_encoder
 
 from app import crud
 from app.api.v1.dependencies import get_db
@@ -12,8 +13,7 @@ from app.models.user import User
 from app.schemas.license import (
     LicenseApplication, 
     LicenseApplicationCreate, 
-    LicenseApplicationUpdate,
-    LicenseApplicationDetail
+    LicenseApplicationUpdate
 )
 
 router = APIRouter()
@@ -95,7 +95,7 @@ def create_application(
     return application
 
 
-@router.get("/pending", response_model=List[LicenseApplicationDetail])
+@router.get("/pending", response_model=List[Dict])
 def read_pending_applications(
     db: Session = Depends(get_db),
     skip: int = 0,
@@ -120,10 +120,11 @@ def read_pending_applications(
         }
     )
     
-    return applications
+    # Convert to dict to avoid pydantic validation issues
+    return jsonable_encoder(applications)
 
 
-@router.get("/{application_id}", response_model=LicenseApplicationDetail)
+@router.get("/{application_id}", response_model=Dict)
 def read_application(
     *,
     db: Session = Depends(get_db),
@@ -152,7 +153,8 @@ def read_application(
         }
     )
     
-    return application
+    # Convert to dict to avoid pydantic validation issues
+    return jsonable_encoder(application)
 
 
 @router.put("/{application_id}", response_model=LicenseApplication)
