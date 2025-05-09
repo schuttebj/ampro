@@ -63,8 +63,13 @@ def create_application(
             detail="Citizen not found",
         )
     
+    # Convert to dict and remove approved_license_id if it's 0 (to avoid foreign key constraint violation)
+    application_data = jsonable_encoder(application_in)
+    if "approved_license_id" in application_data and (application_data["approved_license_id"] == 0 or application_data["approved_license_id"] is None):
+        del application_data["approved_license_id"]
+    
     # Create application
-    application = crud.license_application.create(db, obj_in=application_in)
+    application = crud.license_application.create(db, obj_in=application_data)
     
     # Log action
     crud.audit_log.create(
