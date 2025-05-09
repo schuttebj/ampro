@@ -106,7 +106,7 @@ def generate_license_number(
     return {"license_number": license_number}
 
 
-@router.get("/number/{license_number}", response_model=Dict)
+@router.get("/number/{license_number}", response_model=Dict[str, Any])
 def read_license_by_number(
     *,
     db: Session = Depends(get_db),
@@ -123,6 +123,9 @@ def read_license_by_number(
             detail="License not found",
         )
     
+    # Get related citizen
+    citizen = crud.citizen.get(db, id=license.citizen_id)
+    
     # Log action
     crud.audit_log.create(
         db,
@@ -135,11 +138,42 @@ def read_license_by_number(
         }
     )
     
-    # Convert to dict and wrap in a response object
-    return {"license": jsonable_encoder(license)}
+    # Build response with explicit dictionary creation
+    license_data = {
+        "id": license.id,
+        "license_number": license.license_number,
+        "citizen_id": license.citizen_id,
+        "category": str(license.category),
+        "issue_date": license.issue_date,
+        "expiry_date": license.expiry_date,
+        "status": str(license.status),
+        "restrictions": license.restrictions,
+        "medical_conditions": license.medical_conditions,
+        "file_url": license.file_url,
+        "barcode_data": license.barcode_data,
+        "is_active": license.is_active,
+        "created_at": license.created_at,
+        "updated_at": license.updated_at
+    }
+    
+    # Include citizen data
+    citizen_data = None
+    if citizen:
+        citizen_data = {
+            "id": citizen.id,
+            "id_number": citizen.id_number,
+            "first_name": citizen.first_name,
+            "last_name": citizen.last_name,
+            "date_of_birth": citizen.date_of_birth
+        }
+    
+    return {
+        "license": license_data,
+        "citizen": citizen_data
+    }
 
 
-@router.get("/{license_id}", response_model=Dict)
+@router.get("/{license_id}", response_model=Dict[str, Any])
 def read_license(
     *,
     db: Session = Depends(get_db),
@@ -156,6 +190,9 @@ def read_license(
             detail="License not found",
         )
     
+    # Get related citizen
+    citizen = crud.citizen.get(db, id=license.citizen_id)
+    
     # Log action
     crud.audit_log.create(
         db,
@@ -168,8 +205,39 @@ def read_license(
         }
     )
     
-    # Convert to dict and wrap in a response object
-    return {"license": jsonable_encoder(license)}
+    # Build response with explicit dictionary creation
+    license_data = {
+        "id": license.id,
+        "license_number": license.license_number,
+        "citizen_id": license.citizen_id,
+        "category": str(license.category),
+        "issue_date": license.issue_date,
+        "expiry_date": license.expiry_date,
+        "status": str(license.status),
+        "restrictions": license.restrictions,
+        "medical_conditions": license.medical_conditions,
+        "file_url": license.file_url,
+        "barcode_data": license.barcode_data,
+        "is_active": license.is_active,
+        "created_at": license.created_at,
+        "updated_at": license.updated_at
+    }
+    
+    # Include citizen data
+    citizen_data = None
+    if citizen:
+        citizen_data = {
+            "id": citizen.id,
+            "id_number": citizen.id_number,
+            "first_name": citizen.first_name,
+            "last_name": citizen.last_name,
+            "date_of_birth": citizen.date_of_birth
+        }
+    
+    return {
+        "license": license_data,
+        "citizen": citizen_data
+    }
 
 
 @router.put("/{license_id}", response_model=License)
