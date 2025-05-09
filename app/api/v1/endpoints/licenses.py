@@ -7,7 +7,7 @@ from fastapi.encoders import jsonable_encoder
 from app import crud
 from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
-from app.models.audit import ActionType, ResourceType
+from app.models.audit import ActionType, ResourceType, TransactionType, TransactionStatus
 from app.models.user import User
 from app.schemas.license import License, LicenseCreate, LicenseUpdate
 from app.services.license_generator import (
@@ -143,10 +143,10 @@ def read_license_by_number(
         "id": license.id,
         "license_number": license.license_number,
         "citizen_id": license.citizen_id,
-        "category": str(license.category),
+        "category": license.category.value,
         "issue_date": license.issue_date,
         "expiry_date": license.expiry_date,
-        "status": str(license.status),
+        "status": license.status.value,
         "restrictions": license.restrictions,
         "medical_conditions": license.medical_conditions,
         "file_url": license.file_url,
@@ -210,10 +210,10 @@ def read_license(
         "id": license.id,
         "license_number": license.license_number,
         "citizen_id": license.citizen_id,
-        "category": str(license.category),
+        "category": license.category.value,
         "issue_date": license.issue_date,
         "expiry_date": license.expiry_date,
-        "status": str(license.status),
+        "status": license.status.value,
         "restrictions": license.restrictions,
         "medical_conditions": license.medical_conditions,
         "file_url": license.file_url,
@@ -340,10 +340,10 @@ def get_license_qr_code(
     # Prepare license data
     license_data = {
         "license_number": license.license_number,
-        "category": str(license.category),
+        "category": license.category.value,
         "issue_date": license.issue_date,
         "expiry_date": license.expiry_date,
-        "status": str(license.status),
+        "status": license.status.value,
         "id_number": citizen.id_number,
         "first_name": citizen.first_name,
         "last_name": citizen.last_name,
@@ -396,10 +396,10 @@ def get_license_preview(
     # Prepare license data
     license_data = {
         "license_number": license.license_number,
-        "category": str(license.category),
+        "category": license.category.value,
         "issue_date": license.issue_date,
         "expiry_date": license.expiry_date,
-        "status": str(license.status),
+        "status": license.status.value,
         "id_number": citizen.id_number,
         "first_name": citizen.first_name,
         "last_name": citizen.last_name,
@@ -455,12 +455,13 @@ def print_license(
     
     # Generate a transaction record
     transaction_ref = crud.transaction.generate_transaction_ref()
+    
     transaction = crud.transaction.create(
         db,
         obj_in={
-            "transaction_type": "license_issuance",
+            "transaction_type": TransactionType.LICENSE_ISSUANCE,
             "transaction_ref": transaction_ref,
-            "status": "completed",
+            "status": TransactionStatus.COMPLETED,
             "user_id": current_user.id,
             "citizen_id": citizen.id,
             "license_id": license.id,
