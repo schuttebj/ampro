@@ -7,7 +7,7 @@ from fastapi.encoders import jsonable_encoder
 from app import crud
 from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
-from app.models.audit import ActionType, ResourceType
+from app.models.audit import ActionType, ResourceType, TransactionType, TransactionStatus
 from app.models.license import ApplicationStatus
 from app.models.user import User
 from app.schemas.license import (
@@ -82,9 +82,9 @@ def create_application(
     crud.transaction.create(
         db,
         obj_in={
-            "transaction_type": "application_submission",
+            "transaction_type": TransactionType.APPLICATION_SUBMISSION,
             "transaction_ref": crud.transaction.generate_transaction_ref(),
-            "status": "pending",
+            "status": TransactionStatus.PENDING,
             "user_id": current_user.id,
             "citizen_id": citizen.id,
             "application_id": application.id,
