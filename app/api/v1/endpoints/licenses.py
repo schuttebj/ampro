@@ -135,8 +135,8 @@ def read_license_by_number(
         }
     )
     
-    # Convert to dict to avoid pydantic validation issues
-    return jsonable_encoder(license)
+    # Convert to dict and wrap in a response object
+    return {"license": jsonable_encoder(license)}
 
 
 @router.get("/{license_id}", response_model=Dict)
@@ -168,8 +168,8 @@ def read_license(
         }
     )
     
-    # Convert to dict to avoid pydantic validation issues
-    return jsonable_encoder(license)
+    # Convert to dict and wrap in a response object
+    return {"license": jsonable_encoder(license)}
 
 
 @router.put("/{license_id}", response_model=License)
