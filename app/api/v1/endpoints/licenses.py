@@ -95,6 +95,50 @@ def create_license(
     return license
 
 
+@router.get("/generate-number", response_model=dict)
+def generate_license_number(
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Generate a unique license number.
+    """
+    license_number = crud.license.generate_license_number()
+    return {"license_number": license_number}
+
+
+@router.get("/number/{license_number}", response_model=Dict)
+def read_license_by_number(
+    *,
+    db: Session = Depends(get_db),
+    license_number: str,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get license by license number.
+    """
+    license = crud.license.get_by_license_number(db, license_number=license_number)
+    if not license:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="License not found",
+        )
+    
+    # Log action
+    crud.audit_log.create(
+        db,
+        obj_in={
+            "user_id": current_user.id,
+            "action_type": ActionType.READ,
+            "resource_type": ResourceType.LICENSE,
+            "resource_id": str(license.id),
+            "description": f"User {current_user.username} viewed license {license.license_number}"
+        }
+    )
+    
+    # Convert to dict to avoid pydantic validation issues
+    return jsonable_encoder(license)
+
+
 @router.get("/{license_id}", response_model=Dict)
 def read_license(
     *,
@@ -197,50 +241,6 @@ def delete_license(
     )
     
     return license
-
-
-@router.get("/number/{license_number}", response_model=Dict)
-def read_license_by_number(
-    *,
-    db: Session = Depends(get_db),
-    license_number: str,
-    current_user: User = Depends(get_current_active_user),
-) -> Any:
-    """
-    Get license by license number.
-    """
-    license = crud.license.get_by_license_number(db, license_number=license_number)
-    if not license:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="License not found",
-        )
-    
-    # Log action
-    crud.audit_log.create(
-        db,
-        obj_in={
-            "user_id": current_user.id,
-            "action_type": ActionType.READ,
-            "resource_type": ResourceType.LICENSE,
-            "resource_id": str(license.id),
-            "description": f"User {current_user.username} viewed license {license.license_number}"
-        }
-    )
-    
-    # Convert to dict to avoid pydantic validation issues
-    return jsonable_encoder(license)
-
-
-@router.get("/generate-number", response_model=dict)
-def generate_license_number(
-    current_user: User = Depends(get_current_active_user),
-) -> Any:
-    """
-    Generate a unique license number.
-    """
-    license_number = crud.license.generate_license_number()
-    return {"license_number": license_number}
 
 
 @router.get("/{license_id}/qr-code", response_model=Dict[str, str])
