@@ -1,0 +1,6 @@
+# This file ensures the templates directory is tracked in git
+# Add your template files here:
+# - sa_front_base.png (front side base template)
+# - sa_back_base.png (back side base template)
+# - government_emblem.png (SA coat of arms)
+# - license_categories_icons.png (vehicle type icons) 

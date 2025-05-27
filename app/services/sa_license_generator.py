@@ -160,6 +160,19 @@ class SALicenseGenerator:
     
     def _create_security_background(self, width: int, height: int) -> Image.Image:
         """Create security background pattern"""
+        # Try to load overlay from file first
+        overlay_path = os.path.join(self.assets_path, "overlays", "security_background.png")
+        if os.path.exists(overlay_path):
+            try:
+                background = Image.open(overlay_path).convert('RGBA')
+                # Resize to exact dimensions if needed
+                if background.size != (width, height):
+                    background = background.resize((width, height), Image.Resampling.LANCZOS)
+                return background
+            except Exception as e:
+                print(f"Warning: Could not load security background overlay: {e}")
+        
+        # Fallback: Create programmatic background
         # Create base with security color
         background = Image.new('RGBA', (width, height), COLORS["white"] + (255,))
         
@@ -181,6 +194,19 @@ class SALicenseGenerator:
     
     def _create_watermark_pattern(self, width: int, height: int, text: str = "SOUTH AFRICA") -> Image.Image:
         """Create diagonal watermark pattern"""
+        # Try to load watermark from file first
+        watermark_path = os.path.join(self.assets_path, "overlays", "watermark_pattern.png")
+        if os.path.exists(watermark_path):
+            try:
+                watermark = Image.open(watermark_path).convert('RGBA')
+                # Resize to exact dimensions if needed
+                if watermark.size != (width, height):
+                    watermark = watermark.resize((width, height), Image.Resampling.LANCZOS)
+                return watermark
+            except Exception as e:
+                print(f"Warning: Could not load watermark overlay: {e}")
+        
+        # Fallback: Create programmatic watermark
         watermark = Image.new('RGBA', (width * 2, height * 2), (255, 255, 255, 0))
         draw = ImageDraw.Draw(watermark)
         
@@ -249,6 +275,18 @@ class SALicenseGenerator:
         emblem_w = FRONT_COORDINATES["emblem"][2] - FRONT_COORDINATES["emblem"][0]
         emblem_h = FRONT_COORDINATES["emblem"][3] - FRONT_COORDINATES["emblem"][1]
         
+        # Try to load emblem from file first
+        emblem_path = os.path.join(self.assets_path, "templates", "government_emblem.png")
+        if os.path.exists(emblem_path):
+            try:
+                emblem = Image.open(emblem_path).convert('RGBA')
+                # Resize to exact dimensions
+                emblem = emblem.resize((emblem_w, emblem_h), Image.Resampling.LANCZOS)
+                return emblem
+            except Exception as e:
+                print(f"Warning: Could not load government emblem: {e}")
+        
+        # Fallback: Create simplified emblem
         emblem = Image.new('RGBA', (emblem_w, emblem_h), (255, 255, 255, 0))
         draw = ImageDraw.Draw(emblem)
         

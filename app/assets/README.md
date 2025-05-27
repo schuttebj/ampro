@@ -7,11 +7,48 @@ This directory contains assets for professional South African driver's license g
 ```
 assets/
 ├── templates/          # Base template files (PNG)
+│   ├── government_emblem.png      # SA coat of arms (100x60px)
+│   ├── sa_front_base.png          # Front template (1012x638px)
+│   └── sa_back_base.png           # Back template (1012x638px)
 ├── fonts/             # Font files (.ttf, .otf)
+│   ├── SourceSansPro-Bold.ttf     # Primary bold font
+│   ├── SourceSansPro-Regular.ttf  # Primary regular font
+│   └── Arial-Bold.ttf             # Fallback font
 ├── overlays/          # Security overlays and watermarks
-├── sa_license_coordinates.csv  # Exact coordinate mappings
+│   ├── security_background.png    # Pink/red security pattern (1012x638px)
+│   ├── watermark_pattern.png      # "SOUTH AFRICA" diagonal pattern
+│   └── holographic_strip.png      # Rainbow security strip
+├── sa_license_coordinates.csv     # Exact coordinate mappings
 └── README.md          # This file
 ```
+
+## Asset Loading Behavior
+
+The generator uses a **smart fallback system**:
+
+1. **First**: Try to load professional assets from files
+2. **Fallback**: Generate programmatic alternatives if files are missing
+3. **Graceful**: Never fails - always produces a license
+
+### Security Background
+- **File**: `overlays/security_background.png` (1012×638px, RGBA)
+- **Fallback**: Programmatic pink/red security areas
+- **Usage**: Loaded automatically for authentic appearance
+
+### Watermark Pattern  
+- **File**: `overlays/watermark_pattern.png` (1012×638px, RGBA)
+- **Fallback**: Generated "SOUTH AFRICA" diagonal text
+- **Usage**: Semi-transparent overlay for security
+
+### Government Emblem
+- **File**: `templates/government_emblem.png` (100×60px, RGBA)
+- **Fallback**: Simplified shield with "RSA" text
+- **Usage**: Official SA coat of arms on front side
+
+### Fonts
+- **Files**: Various .ttf files in `fonts/` directory
+- **Fallback**: System fonts (Arial, DejaVu) then default
+- **Usage**: Professional typography matching real licenses
 
 ## Specifications
 
