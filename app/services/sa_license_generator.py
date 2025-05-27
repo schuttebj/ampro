@@ -26,31 +26,66 @@ CARD_H_MM = 54.00
 CARD_W_PX = int(CARD_W_MM * MM_TO_INCH * DPI)   # 1012
 CARD_H_PX = int(CARD_H_MM * MM_TO_INCH * DPI)   # 638
 
-# Exact coordinates based on SA license template (in pixels at 300 DPI)
+# Font sizes (in points) - Updated to match Photoshop 5pt specification
+FONT_SIZES = {
+    "title": 24,
+    "subtitle": 16,
+    "field_label": 5,    # 5pt as specified
+    "field_value": 5,    # 5pt as specified
+    "small": 4,
+    "tiny": 3,
+}
+
+# Grid system constants
+GUTTER_PX = 23.6
+BLEED_PX = 23.6  # 2mm bleed
+GRID_COLS = 6
+GRID_ROWS = 6
+
+def calculate_grid_positions():
+    """Calculate grid cell positions based on 6x6 grid system"""
+    # Available space after bleed and gutters
+    available_width = CARD_W_PX - (2 * BLEED_PX) - (5 * GUTTER_PX)  # 5 gutters between 6 columns
+    available_height = CARD_H_PX - (2 * BLEED_PX) - (5 * GUTTER_PX)  # 5 gutters between 6 rows
+    
+    cell_width = available_width / GRID_COLS
+    cell_height = available_height / GRID_ROWS
+    
+    grid_positions = {}
+    
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
+            x = BLEED_PX + (col * (cell_width + GUTTER_PX))
+            y = BLEED_PX + (row * (cell_height + GUTTER_PX))
+            grid_positions[f"r{row+1}c{col+1}"] = (int(x), int(y), int(cell_width), int(cell_height))
+    
+    return grid_positions, cell_width, cell_height
+
+# Calculate grid positions
+GRID_POSITIONS, CELL_WIDTH, CELL_HEIGHT = calculate_grid_positions()
+
+# Updated coordinates based on grid system
 FRONT_COORDINATES = {
-    # Photo area: 18 × 22 mm = 213 × 260 px
-    "photo": (40, 58, 40+213, 58+260),  # (x0, y0, x1, y1)
+    # Photo area: Columns 1-2, Rows 2-5 (2x4 grid cells)
+    "photo": (
+        GRID_POSITIONS["r2c1"][0],  # x
+        GRID_POSITIONS["r2c1"][1],  # y
+        GRID_POSITIONS["r2c2"][0] + GRID_POSITIONS["r2c2"][2] - GRID_POSITIONS["r2c1"][0],  # width (2 columns)
+        GRID_POSITIONS["r5c1"][1] + GRID_POSITIONS["r5c1"][3] - GRID_POSITIONS["r2c1"][1]   # height (4 rows)
+    ),
     
-    # Text field positions (x, y)
-    "surname": (530, 80),
-    "names": (530, 125),
-    "id_number": (530, 170),
-    "date_of_birth": (530, 215),
-    "issue_date": (530, 260),
-    "expiry_date": (530, 305),
-    "license_number": (530, 350),
-    "category": (530, 395),
-    "restrictions": (530, 440),
+    # Information area: Columns 3-6, Rows 2-5 (starting positions for text)
+    "info_start_x": GRID_POSITIONS["r2c3"][0],
+    "info_start_y": GRID_POSITIONS["r2c3"][1],
+    "info_line_height": 15,  # Spacing between lines
     
-    # Signature box
-    "signature": (530, 485, 885, 540),
-    
-    # Government emblem
-    "emblem": (20, 20, 120, 80),
-    
-    # Title position
-    "title": (CARD_W_PX // 2, 30),
-    "subtitle": (CARD_W_PX // 2, 55),
+    # Signature area: Row 6, Columns 1-6
+    "signature": (
+        GRID_POSITIONS["r6c1"][0],
+        GRID_POSITIONS["r6c1"][1],
+        GRID_POSITIONS["r6c6"][0] + GRID_POSITIONS["r6c6"][2] - GRID_POSITIONS["r6c1"][0],
+        GRID_POSITIONS["r6c1"][3]
+    ),
 }
 
 BACK_COORDINATES = {
@@ -66,16 +101,6 @@ BACK_COORDINATES = {
     
     # Restrictions header
     "restrictions_header": (30, 30),
-}
-
-# Font sizes (in points)
-FONT_SIZES = {
-    "title": 24,
-    "subtitle": 16,
-    "field_label": 12,
-    "field_value": 14,
-    "small": 10,
-    "tiny": 8,
 }
 
 # Colors (RGB)
@@ -162,6 +187,18 @@ class SALicenseGenerator:
     
     def _create_security_background(self, width: int, height: int) -> Image.Image:
         """Create security background pattern"""
+        # Try to load the new grid-based template first
+        template_path = os.path.join(self.assets_path, "overlays", "Card_BG_Back.png")
+        if os.path.exists(template_path):
+            try:
+                background = Image.open(template_path).convert('RGBA')
+                # Resize to exact dimensions if needed
+                if background.size != (width, height):
+                    background = background.resize((width, height), Image.Resampling.LANCZOS)
+                return background
+            except Exception as e:
+                print(f"Warning: Could not load Card_BG_Back template: {e}")
+        
         # Try to load overlay from file first
         overlay_path = os.path.join(self.assets_path, "overlays", "security_background.png")
         if os.path.exists(overlay_path):
@@ -342,81 +379,78 @@ class SALicenseGenerator:
             return placeholder
     
     def generate_front(self, license_data: Dict[str, Any], photo_url: Optional[str] = None) -> str:
-        """Generate professional SA license front side"""
+        """Generate professional SA license front side using grid-based layout"""
         
-        # Create base image with security background
+        # Create base image with grid-based background template
         license_img = self._create_security_background(CARD_W_PX, CARD_H_PX)
         draw = ImageDraw.Draw(license_img)
         
-        # Add border
-        draw.rectangle([2, 2, CARD_W_PX-2, CARD_H_PX-2], outline=COLORS["black"], width=2)
-        
-        # Add government emblem
-        emblem = self._create_government_emblem()
-        emblem_pos = FRONT_COORDINATES["emblem"][:2]
-        license_img.paste(emblem, emblem_pos, emblem)
-        
-        # Add title and subtitle
-        draw.text(FRONT_COORDINATES["title"], "DRIVING LICENCE", 
-                 fill=COLORS["black"], font=self.fonts["title"], anchor="mm")
-        draw.text(FRONT_COORDINATES["subtitle"], "REPUBLIC OF SOUTH AFRICA", 
-                 fill=COLORS["black"], font=self.fonts["subtitle"], anchor="mm")
-        
-        # Process and add photo
+        # Process and add photo in grid position (Columns 1-2, Rows 2-5)
         photo = self._download_and_process_photo(photo_url)
         photo_pos = FRONT_COORDINATES["photo"]
         
         if photo:
-            license_img.paste(photo, photo_pos[:2])
+            # Resize photo to fit the grid area
+            photo_resized = photo.resize((photo_pos[2], photo_pos[3]), Image.Resampling.LANCZOS)
+            license_img.paste(photo_resized, (photo_pos[0], photo_pos[1]))
         else:
             # Photo placeholder
-            draw.rectangle(photo_pos, outline=COLORS["black"], width=2, fill=(240, 240, 240))
-            photo_center_x = (photo_pos[0] + photo_pos[2]) // 2
-            photo_center_y = (photo_pos[1] + photo_pos[3]) // 2
+            draw.rectangle([photo_pos[0], photo_pos[1], 
+                          photo_pos[0] + photo_pos[2], photo_pos[1] + photo_pos[3]], 
+                         outline=COLORS["black"], width=2, fill=(240, 240, 240))
+            photo_center_x = photo_pos[0] + photo_pos[2] // 2
+            photo_center_y = photo_pos[1] + photo_pos[3] // 2
             draw.text((photo_center_x, photo_center_y), "PHOTO", 
                      fill=(100, 100, 100), font=self.fonts["field_value"], anchor="mm")
         
-        # Add photo border
-        draw.rectangle(photo_pos, outline=COLORS["black"], width=2)
+        # Information area: Columns 3-6, Rows 2-5 (left-aligned labels and values)
+        info_x = FRONT_COORDINATES["info_start_x"]
+        info_y = FRONT_COORDINATES["info_start_y"]
+        line_height = FRONT_COORDINATES["info_line_height"]
         
-        # Add text fields
-        fields = [
-            ("surname", f"Surname: {license_data.get('last_name', 'N/A')}"),
-            ("names", f"Names: {license_data.get('first_name', 'N/A')}"),
-            ("id_number", f"ID No: {license_data.get('id_number', 'N/A')}"),
-            ("date_of_birth", f"Date of Birth: {license_data.get('date_of_birth', 'N/A')}"),
-            ("issue_date", f"Issue: {license_data.get('issue_date', 'N/A')}"),
-            ("expiry_date", f"Valid: {license_data.get('expiry_date', 'N/A')}"),
-            ("license_number", f"DL No: {license_data.get('license_number', 'N/A')}"),
-            ("category", f"Code: {license_data.get('category', 'N/A')}"),
+        # Define information fields with labels and values
+        info_fields = [
+            ("Surname", license_data.get('last_name', 'N/A')),
+            ("Name", license_data.get('first_name', 'N/A')),
+            ("Date of Birth", license_data.get('date_of_birth', 'N/A')),
+            ("Gender", license_data.get('gender', 'N/A')),
+            ("ID No", license_data.get('id_number', 'N/A')),
+            ("Valid", f"{license_data.get('issue_date', 'N/A')} - {license_data.get('expiry_date', 'N/A')}"),
+            ("Issued", license_data.get('issued_location', 'South Africa')),
+            ("Licence No", license_data.get('license_number', 'N/A')),
+            ("Code", license_data.get('category', 'N/A')),
+            ("Restrictions", license_data.get('restrictions', '0')),
+            ("First Issue", license_data.get('first_issue_date', 'N/A')),
         ]
         
-        for field_name, text in fields:
-            pos = FRONT_COORDINATES[field_name]
-            draw.text(pos, text, fill=COLORS["black"], font=self.fonts["field_value"])
+        # Draw information fields with proper spacing
+        current_y = info_y
+        for label, value in info_fields:
+            # Draw label (bold, 5pt)
+            draw.text((info_x, current_y), label, 
+                     fill=COLORS["black"], font=self.fonts["field_label"])
+            
+            # Calculate value position (aligned with label)
+            label_width = draw.textbbox((0, 0), label, font=self.fonts["field_label"])[2]
+            value_x = info_x + label_width + 20  # 20px spacing between label and value
+            
+            # Draw value (regular, 5pt)
+            draw.text((value_x, current_y), str(value), 
+                     fill=COLORS["black"], font=self.fonts["field_value"])
+            
+            current_y += line_height
         
-        # Add restrictions if any
-        if license_data.get('restrictions'):
-            restrictions_text = f"Restrictions: {license_data.get('restrictions')}"
-            draw.text(FRONT_COORDINATES["restrictions"], restrictions_text, 
-                     fill=COLORS["black"], font=self.fonts["small"])
-        
-        # Add signature box
+        # Signature area: Row 6, Columns 1-6
         sig_box = FRONT_COORDINATES["signature"]
-        draw.rectangle(sig_box, outline=COLORS["black"], width=1)
+        draw.rectangle([sig_box[0], sig_box[1], 
+                       sig_box[0] + sig_box[2], sig_box[1] + sig_box[3]], 
+                      outline=COLORS["black"], width=1)
         draw.text((sig_box[0] + 5, sig_box[1] + 5), "Signature:", 
-                 fill=COLORS["black"], font=self.fonts["small"])
+                 fill=COLORS["black"], font=self.fonts["field_label"])
         
-        # Add watermark
+        # Add watermark if available
         watermark = self._create_watermark_pattern(CARD_W_PX, CARD_H_PX)
         license_img = Image.alpha_composite(license_img.convert('RGBA'), watermark).convert('RGB')
-        
-        # Add holographic security strip (right edge)
-        draw = ImageDraw.Draw(license_img)  # Recreate draw after alpha composite
-        security_strip_x = CARD_W_PX - 25
-        for i in range(0, CARD_H_PX, 8):
-            color = (200 + (i % 55), 150 + (i % 105), 255)
-            draw.rectangle([security_strip_x, i, CARD_W_PX - 2, i + 4], fill=color)
         
         # Convert to base64
         buffer = io.BytesIO()
