@@ -266,15 +266,15 @@ def generate_license_barcode_data(license_number: str, id_number: str) -> str:
     return f"{license_number.replace('-', '')}:{id_number}"
 
 
-def generate_license_preview(license_data: Dict[str, Any], photo_url: Optional[str] = None) -> str:
+def generate_license_preview(license_data: Dict[str, Any], photo_data: Optional[str] = None) -> str:
     """Generate license preview (now uses professional SA front template)"""
-    return generate_sa_license_front_professional(license_data, photo_url)
+    return generate_sa_license_front_professional(license_data, photo_data)
 
 
 # Professional SA license functions (now the default)
-def generate_sa_license_front(license_data: Dict[str, Any], photo_url: Optional[str] = None) -> str:
+def generate_sa_license_front(license_data: Dict[str, Any], photo_data: Optional[str] = None) -> str:
     """Generate South African driver's license front side (professional version)"""
-    return generate_sa_license_front_professional(license_data, photo_url)
+    return generate_sa_license_front_professional(license_data, photo_data)
 
 
 def generate_sa_license_back(license_data: Dict[str, Any]) -> str:
@@ -438,17 +438,34 @@ class SALicenseGenerator:
         # Crop to original size
         return watermark.crop((0, 0, width, height))
     
-    def _download_and_process_photo(self, photo_url: str) -> Optional[Image.Image]:
-        """Download and process photo to exact specifications"""
-        if not photo_url:
+    def _process_photo_data(self, photo_data: str) -> Optional[Image.Image]:
+        """Process photo data from either URL or base64 string"""
+        if not photo_data:
             return None
         
         try:
-            response = requests.get(photo_url, timeout=10)
-            response.raise_for_status()
+            # Check if it's base64 data (starts with data: or is pure base64)
+            if photo_data.startswith('data:'):
+                # Handle data URL format: data:image/jpeg;base64,/9j/4AAQ...
+                if ';base64,' in photo_data:
+                    base64_data = photo_data.split(';base64,')[1]
+                else:
+                    # Fallback if format is unexpected
+                    base64_data = photo_data.split(',')[1] if ',' in photo_data else photo_data
+            elif photo_data.startswith(('http://', 'https://')):
+                # Handle URL - download the image
+                response = requests.get(photo_data, timeout=10)
+                response.raise_for_status()
+                photo = Image.open(io.BytesIO(response.content))
+            else:
+                # Assume it's pure base64 data
+                base64_data = photo_data
             
-            # Open and process the image
-            photo = Image.open(io.BytesIO(response.content))
+            # If we have base64 data, decode it
+            if 'base64_data' in locals():
+                # Decode base64 to bytes
+                image_bytes = base64.b64decode(base64_data)
+                photo = Image.open(io.BytesIO(image_bytes))
             
             # Convert to RGB if necessary
             if photo.mode != 'RGB':
@@ -470,7 +487,7 @@ class SALicenseGenerator:
             return final_photo
             
         except Exception as e:
-            print(f"Error processing photo: {e}")
+            print(f"Error processing photo data: {e}")
             return None
     
     def _generate_pdf417_barcode(self, data: str) -> Image.Image:
@@ -501,7 +518,7 @@ class SALicenseGenerator:
                      font=self.fonts["small"], anchor="mm")
             return placeholder
     
-    def generate_front(self, license_data: Dict[str, Any], photo_url: Optional[str] = None) -> str:
+    def generate_front(self, license_data: Dict[str, Any], photo_data: Optional[str] = None) -> str:
         """Generate professional SA license front side using grid-based layout"""
         
         # Create base image with grid-based background template
@@ -509,7 +526,7 @@ class SALicenseGenerator:
         draw = ImageDraw.Draw(license_img)
         
         # Process and add photo in grid position (Columns 1-2, Rows 2-5)
-        photo = self._download_and_process_photo(photo_url)
+        photo = self._process_photo_data(photo_data)
         photo_pos = FRONT_COORDINATES["photo"]
         
         if photo:
@@ -631,9 +648,9 @@ sa_license_generator = SALicenseGenerator()
 
 # Professional SA license functions (using the class instance)
 def generate_sa_license_front_professional(license_data: Dict[str, Any], 
-                                         photo_url: Optional[str] = None) -> str:
+                                         photo_data: Optional[str] = None) -> str:
     """Generate professional SA license front side"""
-    return sa_license_generator.generate_front(license_data, photo_url)
+    return sa_license_generator.generate_front(license_data, photo_data)
 
 
 def generate_sa_license_back_professional(license_data: Dict[str, Any]) -> str:
