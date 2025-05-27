@@ -13,7 +13,10 @@ from app.schemas.license import License, LicenseCreate, LicenseUpdate
 from app.services.license_generator import (
     generate_license_qr_code,
     generate_license_barcode_data,
-    generate_license_preview
+    generate_license_preview,
+    generate_sa_license_front,
+    generate_sa_license_back,
+    generate_watermark_template
 )
 
 router = APIRouter()
@@ -490,4 +493,156 @@ def print_license(
         "transaction_id": transaction.id,
         "transaction_ref": transaction.transaction_ref,
         "amount": "R120.00"
+    }
+
+
+@router.get("/{license_id}/preview/front", response_model=Dict[str, str])
+def get_sa_license_front_preview(
+    *,
+    db: Session = Depends(get_db),
+    license_id: int,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Generate a South African driver's license front side preview.
+    Returns a base64 encoded PNG image.
+    """
+    # Get license with citizen
+    license = crud.license.get(db, id=license_id)
+    if not license:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="License not found",
+        )
+    
+    citizen = crud.citizen.get(db, id=license.citizen_id)
+    if not citizen:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Citizen not found",
+        )
+    
+    # Prepare license data
+    license_data = {
+        "license_number": license.license_number,
+        "category": license.category.value,
+        "issue_date": license.issue_date,
+        "expiry_date": license.expiry_date,
+        "status": license.status.value,
+        "id_number": citizen.id_number,
+        "first_name": citizen.first_name,
+        "last_name": citizen.last_name,
+        "date_of_birth": citizen.date_of_birth,
+        "restrictions": license.restrictions,
+        "medical_conditions": license.medical_conditions,
+    }
+    
+    # Generate front side preview
+    preview = generate_sa_license_front(license_data, citizen.photo_url)
+    
+    # Log action
+    crud.audit_log.create(
+        db,
+        obj_in={
+            "user_id": current_user.id,
+            "action_type": ActionType.READ,
+            "resource_type": ResourceType.LICENSE,
+            "resource_id": str(license.id),
+            "description": f"User {current_user.username} generated SA front preview for license {license.license_number}"
+        }
+    )
+    
+    return {"preview": preview}
+
+
+@router.get("/{license_id}/preview/back", response_model=Dict[str, str])
+def get_sa_license_back_preview(
+    *,
+    db: Session = Depends(get_db),
+    license_id: int,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Generate a South African driver's license back side preview.
+    Returns a base64 encoded PNG image.
+    """
+    # Get license with citizen
+    license = crud.license.get(db, id=license_id)
+    if not license:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="License not found",
+        )
+    
+    citizen = crud.citizen.get(db, id=license.citizen_id)
+    if not citizen:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Citizen not found",
+        )
+    
+    # Prepare license data
+    license_data = {
+        "license_number": license.license_number,
+        "category": license.category.value,
+        "issue_date": license.issue_date,
+        "expiry_date": license.expiry_date,
+        "status": license.status.value,
+        "id_number": citizen.id_number,
+        "first_name": citizen.first_name,
+        "last_name": citizen.last_name,
+        "date_of_birth": citizen.date_of_birth,
+        "restrictions": license.restrictions,
+        "medical_conditions": license.medical_conditions,
+    }
+    
+    # Generate back side preview
+    preview = generate_sa_license_back(license_data)
+    
+    # Log action
+    crud.audit_log.create(
+        db,
+        obj_in={
+            "user_id": current_user.id,
+            "action_type": ActionType.READ,
+            "resource_type": ResourceType.LICENSE,
+            "resource_id": str(license.id),
+            "description": f"User {current_user.username} generated SA back preview for license {license.license_number}"
+        }
+    )
+    
+    return {"preview": preview}
+
+
+@router.get("/watermark-template", response_model=Dict[str, str])
+def get_watermark_template(
+    *,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    width: int = 1012,
+    height: int = 638,
+    text: str = "SOUTH AFRICA"
+) -> Any:
+    """
+    Generate a watermark template for license printing.
+    Returns a base64 encoded PNG image of the watermark pattern.
+    """
+    # Generate watermark template
+    watermark = generate_watermark_template(width, height, text)
+    
+    # Log action (no specific license, so no resource_id)
+    crud.audit_log.create(
+        db,
+        obj_in={
+            "user_id": current_user.id,
+            "action_type": ActionType.READ,
+            "resource_type": ResourceType.LICENSE,
+            "description": f"User {current_user.username} generated watermark template ({width}x{height})"
+        }
+    )
+    
+    return {
+        "watermark": watermark,
+        "dimensions": f"{width}x{height}",
+        "text": text
     } 
