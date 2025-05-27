@@ -125,6 +125,8 @@ class SALicenseGenerator:
         font_options = [
             "SourceSansPro-Bold.ttf",
             "SourceSansPro-Regular.ttf", 
+            "ARIALBD.TTF",
+            "dejavu-sans.bold.ttf",
             "Arial-Bold.ttf",
             "arial.ttf",
             "Arial.ttf",
