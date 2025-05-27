@@ -30,8 +30,8 @@ CARD_H_PX = int(CARD_H_MM * MM_TO_INCH * DPI)   # 638
 FONT_SIZES = {
     "title": 36,
     "subtitle": 24,
-    "field_label": 22,    # Increased from 15pt to 22pt (1.5x)
-    "field_value": 22,    # Increased from 15pt to 22pt (1.5x)
+    "field_label": 22,    # Bold font for labels
+    "field_value": 22,    # Regular font for values
     "small": 15,
     "tiny": 12,
 }
@@ -78,9 +78,9 @@ FRONT_COORDINATES = {
     "labels_column_x": GRID_POSITIONS["r2c3"][0],  # Labels in column 3
     "values_column_x": GRID_POSITIONS["r2c4"][0],  # Values in column 4-6
     "info_start_y": GRID_POSITIONS["r2c3"][1],
-    "line_height": 22,  # Same size as font for proper spacing
+    "line_height": 44,  # Increased from 22 to 44 for 18-22pt gap between items
     
-    # Signature area: Row 6, Columns 1-6
+    # Signature area: Row 6, Columns 1-6 (just signature, no label)
     "signature": (
         GRID_POSITIONS["r6c1"][0],
         GRID_POSITIONS["r6c1"][1],
@@ -147,21 +147,33 @@ class SALicenseGenerator:
             "/usr/share/fonts/truetype/dejavu",  # Linux
         ]
         
-        # Font options in order of preference
-        font_options = [
+        # Bold font options for labels
+        bold_font_options = [
             "SourceSansPro-Bold.ttf",
-            "SourceSansPro-Regular.ttf", 
             "ARIALBD.TTF",
             "dejavu-sans.bold.ttf",
             "Arial-Bold.ttf",
+            "DejaVuSans-Bold.ttf",
+        ]
+        
+        # Regular font options for values
+        regular_font_options = [
+            "SourceSansPro-Regular.ttf",
             "arial.ttf",
             "Arial.ttf",
-            "DejaVuSans-Bold.ttf",
             "DejaVuSans.ttf",
         ]
         
+        # Load fonts for each size
         for size_name, size in FONT_SIZES.items():
             font_loaded = False
+            
+            # Determine which font list to use
+            if size_name == "field_label":
+                font_options = bold_font_options
+            else:
+                # For field_value, use regular fonts; for others, try bold first then regular
+                font_options = regular_font_options if size_name == "field_value" else bold_font_options + regular_font_options
             
             # Try to find a suitable font
             for font_dir in font_paths:
@@ -438,10 +450,10 @@ class SALicenseGenerator:
             
             current_y += line_height
         
-        # Signature area: Row 6, Columns 1-6 (no border)
+        # Signature area: Row 6, Columns 1-6 (just signature, no label)
         sig_box = FRONT_COORDINATES["signature"]
-        draw.text((sig_box[0] + 5, sig_box[1] + 5), "Signature:", 
-                 fill=COLORS["black"], font=self.fonts["field_label"])
+        # Add a simple signature placeholder or leave empty for actual signature
+        # You can add actual signature processing here if needed
         
         # Convert to base64 (no watermark overlay)
         buffer = io.BytesIO()
