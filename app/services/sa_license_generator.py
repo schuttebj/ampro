@@ -26,14 +26,14 @@ CARD_H_MM = 54.00
 CARD_W_PX = int(CARD_W_MM * MM_TO_INCH * DPI)   # 1012
 CARD_H_PX = int(CARD_H_MM * MM_TO_INCH * DPI)   # 638
 
-# Font sizes (in points) - Updated to match Photoshop 5pt specification
+# Font sizes (in points) - Updated to achieve ~20px height
 FONT_SIZES = {
     "title": 24,
     "subtitle": 16,
-    "field_label": 5,    # 5pt as specified
-    "field_value": 5,    # 5pt as specified
-    "small": 4,
-    "tiny": 3,
+    "field_label": 15,    # Increased from 5pt to achieve ~20px height
+    "field_value": 15,    # Increased from 5pt to achieve ~20px height
+    "small": 10,
+    "tiny": 8,
 }
 
 # Grid system constants
@@ -394,10 +394,10 @@ class SALicenseGenerator:
             photo_resized = photo.resize((photo_pos[2], photo_pos[3]), Image.Resampling.LANCZOS)
             license_img.paste(photo_resized, (photo_pos[0], photo_pos[1]))
         else:
-            # Photo placeholder
+            # Photo placeholder (no border)
             draw.rectangle([photo_pos[0], photo_pos[1], 
                           photo_pos[0] + photo_pos[2], photo_pos[1] + photo_pos[3]], 
-                         outline=COLORS["black"], width=2, fill=(240, 240, 240))
+                         fill=(240, 240, 240))
             photo_center_x = photo_pos[0] + photo_pos[2] // 2
             photo_center_y = photo_pos[1] + photo_pos[3] // 2
             draw.text((photo_center_x, photo_center_y), "PHOTO", 
@@ -440,19 +440,12 @@ class SALicenseGenerator:
             
             current_y += line_height
         
-        # Signature area: Row 6, Columns 1-6
+        # Signature area: Row 6, Columns 1-6 (no border)
         sig_box = FRONT_COORDINATES["signature"]
-        draw.rectangle([sig_box[0], sig_box[1], 
-                       sig_box[0] + sig_box[2], sig_box[1] + sig_box[3]], 
-                      outline=COLORS["black"], width=1)
         draw.text((sig_box[0] + 5, sig_box[1] + 5), "Signature:", 
                  fill=COLORS["black"], font=self.fonts["field_label"])
         
-        # Add watermark if available
-        watermark = self._create_watermark_pattern(CARD_W_PX, CARD_H_PX)
-        license_img = Image.alpha_composite(license_img.convert('RGBA'), watermark).convert('RGB')
-        
-        # Convert to base64
+        # Convert to base64 (no watermark overlay)
         buffer = io.BytesIO()
         license_img.save(buffer, format="PNG", dpi=(DPI, DPI))
         return base64.b64encode(buffer.getvalue()).decode('utf-8')
@@ -525,17 +518,12 @@ class SALicenseGenerator:
         barcode_pos = BACK_COORDINATES["barcode"][:2]
         license_img.paste(barcode_img, barcode_pos)
         
-        # Add watermark
-        watermark = self._create_watermark_pattern(CARD_W_PX, CARD_H_PX)
-        license_img = Image.alpha_composite(license_img.convert('RGBA'), watermark).convert('RGB')
-        
         # Add authority information
-        draw = ImageDraw.Draw(license_img)  # Recreate draw after alpha composite
         draw.text((CARD_W_PX // 2, CARD_H_PX - 20), 
                  "Department of Transport - Republic of South Africa", 
                  fill=COLORS["black"], font=self.fonts["tiny"], anchor="mm")
         
-        # Convert to base64
+        # Convert to base64 (no watermark overlay)
         buffer = io.BytesIO()
         license_img.save(buffer, format="PNG", dpi=(DPI, DPI))
         return base64.b64encode(buffer.getvalue()).decode('utf-8')
