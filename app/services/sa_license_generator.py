@@ -26,14 +26,14 @@ CARD_H_MM = 54.00
 CARD_W_PX = int(CARD_W_MM * MM_TO_INCH * DPI)   # 1012
 CARD_H_PX = int(CARD_H_MM * MM_TO_INCH * DPI)   # 638
 
-# Font sizes (in points) - Updated to achieve ~20px height
+# Font sizes (in points) - Increased by 1.5x for better readability
 FONT_SIZES = {
-    "title": 24,
-    "subtitle": 16,
-    "field_label": 15,    # Increased from 5pt to achieve ~20px height
-    "field_value": 15,    # Increased from 5pt to achieve ~20px height
-    "small": 10,
-    "tiny": 8,
+    "title": 36,
+    "subtitle": 24,
+    "field_label": 22,    # Increased from 15pt to 22pt (1.5x)
+    "field_value": 22,    # Increased from 15pt to 22pt (1.5x)
+    "small": 15,
+    "tiny": 12,
 }
 
 # Grid system constants
@@ -74,10 +74,11 @@ FRONT_COORDINATES = {
         GRID_POSITIONS["r5c1"][1] + GRID_POSITIONS["r5c1"][3] - GRID_POSITIONS["r2c1"][1]   # height (4 rows)
     ),
     
-    # Information area: Columns 3-6, Rows 2-5 (starting positions for text)
-    "info_start_x": GRID_POSITIONS["r2c3"][0],
+    # Information area: Columns 3-6, Rows 2-5
+    "labels_column_x": GRID_POSITIONS["r2c3"][0],  # Labels in column 3
+    "values_column_x": GRID_POSITIONS["r2c4"][0],  # Values in column 4-6
     "info_start_y": GRID_POSITIONS["r2c3"][1],
-    "info_line_height": 15,  # Spacing between lines
+    "line_height": 22,  # Same size as font for proper spacing
     
     # Signature area: Row 6, Columns 1-6
     "signature": (
@@ -403,10 +404,11 @@ class SALicenseGenerator:
             draw.text((photo_center_x, photo_center_y), "PHOTO", 
                      fill=(100, 100, 100), font=self.fonts["field_value"], anchor="mm")
         
-        # Information area: Columns 3-6, Rows 2-5 (left-aligned labels and values)
-        info_x = FRONT_COORDINATES["info_start_x"]
+        # Information area: Columns 3-6, Rows 2-5 (separate columns for labels and values)
+        labels_x = FRONT_COORDINATES["labels_column_x"]
+        values_x = FRONT_COORDINATES["values_column_x"]
         info_y = FRONT_COORDINATES["info_start_y"]
-        line_height = FRONT_COORDINATES["info_line_height"]
+        line_height = FRONT_COORDINATES["line_height"]
         
         # Define information fields with labels and values
         info_fields = [
@@ -423,19 +425,15 @@ class SALicenseGenerator:
             ("First Issue", license_data.get('first_issue_date', 'N/A')),
         ]
         
-        # Draw information fields with proper spacing
+        # Draw information fields with column-based layout
         current_y = info_y
         for label, value in info_fields:
-            # Draw label (bold, 5pt)
-            draw.text((info_x, current_y), label, 
+            # Draw label in labels column (bold)
+            draw.text((labels_x, current_y), label, 
                      fill=COLORS["black"], font=self.fonts["field_label"])
             
-            # Calculate value position (aligned with label)
-            label_width = draw.textbbox((0, 0), label, font=self.fonts["field_label"])[2]
-            value_x = info_x + label_width + 20  # 20px spacing between label and value
-            
-            # Draw value (regular, 5pt)
-            draw.text((value_x, current_y), str(value), 
+            # Draw value in values column (regular)
+            draw.text((values_x, current_y), str(value), 
                      fill=COLORS["black"], font=self.fonts["field_value"])
             
             current_y += line_height
