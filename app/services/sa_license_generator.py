@@ -103,9 +103,9 @@ class SALicenseGenerator:
     """Professional South African Driver's License Generator"""
     
     def __init__(self):
-        self.fonts = self._load_fonts()
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self.assets_path = os.path.join(self.base_path, "..", "assets")
+        self.fonts = self._load_fonts()
     
     def _load_fonts(self) -> Dict[str, ImageFont.FreeTypeFont]:
         """Load fonts with fallbacks for different systems"""
