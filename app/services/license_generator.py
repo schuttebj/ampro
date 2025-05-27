@@ -1,13 +1,114 @@
 import io
 import base64
 import json
+import os
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from datetime import date, datetime
 import qrcode
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-import textwrap
+import pdf417gen
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
 
+# ---------- CONSTANTS ----------
+DPI = 300
+MM_TO_INCH = 1/25.4
+CARD_W_MM = 85.60
+CARD_H_MM = 54.00
+CARD_W_PX = int(CARD_W_MM * MM_TO_INCH * DPI)   # 1012
+CARD_H_PX = int(CARD_H_MM * MM_TO_INCH * DPI)   # 638
+
+# Font sizes (in points) - Increased by 1.5x for better readability
+FONT_SIZES = {
+    "title": 36,
+    "subtitle": 24,
+    "field_label": 22,    # Bold font for labels
+    "field_value": 22,    # Regular font for values
+    "small": 15,
+    "tiny": 12,
+}
+
+# Grid system constants
+GUTTER_PX = 23.6
+BLEED_PX = 23.6  # 2mm bleed
+GRID_COLS = 6
+GRID_ROWS = 6
+
+def calculate_grid_positions():
+    """Calculate grid cell positions based on 6x6 grid system"""
+    # Available space after bleed and gutters
+    available_width = CARD_W_PX - (2 * BLEED_PX) - (5 * GUTTER_PX)  # 5 gutters between 6 columns
+    available_height = CARD_H_PX - (2 * BLEED_PX) - (5 * GUTTER_PX)  # 5 gutters between 6 rows
+    
+    cell_width = available_width / GRID_COLS
+    cell_height = available_height / GRID_ROWS
+    
+    grid_positions = {}
+    
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
+            x = BLEED_PX + (col * (cell_width + GUTTER_PX))
+            y = BLEED_PX + (row * (cell_height + GUTTER_PX))
+            grid_positions[f"r{row+1}c{col+1}"] = (int(x), int(y), int(cell_width), int(cell_height))
+    
+    return grid_positions, cell_width, cell_height
+
+# Calculate grid positions
+GRID_POSITIONS, CELL_WIDTH, CELL_HEIGHT = calculate_grid_positions()
+
+# Updated coordinates based on grid system
+FRONT_COORDINATES = {
+    # Photo area: Columns 1-2, Rows 2-5 (2x4 grid cells)
+    "photo": (
+        GRID_POSITIONS["r2c1"][0],  # x
+        GRID_POSITIONS["r2c1"][1],  # y
+        GRID_POSITIONS["r2c2"][0] + GRID_POSITIONS["r2c2"][2] - GRID_POSITIONS["r2c1"][0],  # width (2 columns)
+        GRID_POSITIONS["r5c1"][1] + GRID_POSITIONS["r5c1"][3] - GRID_POSITIONS["r2c1"][1]   # height (4 rows)
+    ),
+    
+    # Information area: Columns 3-6, Rows 2-5
+    "labels_column_x": GRID_POSITIONS["r2c3"][0],  # Labels in column 3
+    "values_column_x": GRID_POSITIONS["r2c4"][0],  # Values in column 4-6
+    "info_start_y": GRID_POSITIONS["r2c3"][1],
+    "line_height": 37,  # Reduced from 44 to 37 (about 15% less spacing)
+    
+    # Signature area: Row 6, Columns 1-6 (just signature, no label)
+    "signature": (
+        GRID_POSITIONS["r6c1"][0],
+        GRID_POSITIONS["r6c1"][1],
+        GRID_POSITIONS["r6c6"][0] + GRID_POSITIONS["r6c6"][2] - GRID_POSITIONS["r6c1"][0],
+        GRID_POSITIONS["r6c1"][3]
+    ),
+}
+
+BACK_COORDINATES = {
+    # PDF417 barcode area - Row 1, all 6 columns
+    "barcode": (
+        GRID_POSITIONS["r1c1"][0],  # x
+        GRID_POSITIONS["r1c1"][1],  # y
+        GRID_POSITIONS["r1c6"][0] + GRID_POSITIONS["r1c6"][2] - GRID_POSITIONS["r1c1"][0],  # width (6 columns)
+        GRID_POSITIONS["r1c1"][3]   # height (1 row)
+    ),
+    
+    # Fingerprint area - Bottom-right corner (columns 5-6, rows 5-6)
+    "fingerprint": (
+        GRID_POSITIONS["r5c5"][0],  # x
+        GRID_POSITIONS["r5c5"][1],  # y
+        GRID_POSITIONS["r6c6"][0] + GRID_POSITIONS["r6c6"][2] - GRID_POSITIONS["r5c5"][0],  # width (2 columns)
+        GRID_POSITIONS["r6c6"][1] + GRID_POSITIONS["r6c6"][3] - GRID_POSITIONS["r5c5"][1]   # height (2 rows)
+    ),
+}
+
+# Colors (RGB)
+COLORS = {
+    "black": (0, 0, 0),
+    "white": (255, 255, 255),
+    "security_pink": (255, 200, 200),
+    "security_overlay": (255, 150, 150, 40),
+    "watermark": (200, 200, 200, 30),
+}
 
 def serialize_date(obj):
     """Helper function to serialize dates to ISO format strings"""
@@ -137,255 +238,9 @@ def create_sa_coat_of_arms(size=(60, 60)):
     return img
 
 
-def generate_sa_license_front(license_data: Dict[str, Any], photo_url: Optional[str] = None) -> str:
-    """Generate South African driver's license front side"""
-    # Standard credit card dimensions at 300 DPI
-    width, height = 1012, 638
-    
-    # Create base image with white background
-    license_img = Image.new('RGB', (width, height), (255, 255, 255))
-    draw = ImageDraw.Draw(license_img)
-    
-    # Load fonts
-    fonts = load_fonts()
-    
-    # Add security background pattern (light pink/red areas)
-    security_overlay = Image.new('RGBA', (width, height), (255, 200, 200, 30))
-    
-    # Add pink security areas (simplified)
-    security_draw = ImageDraw.Draw(security_overlay)
-    security_draw.rectangle([0, 0, width//3, height], fill=(255, 150, 150, 40))
-    security_draw.rectangle([width*2//3, 0, width, height//2], fill=(255, 150, 150, 40))
-    
-    license_img = Image.alpha_composite(license_img.convert('RGBA'), security_overlay).convert('RGB')
-    draw = ImageDraw.Draw(license_img)
-    
-    # Add border
-    draw.rectangle([5, 5, width-5, height-5], outline=(0, 0, 0), width=2)
-    
-    # Header section
-    header_y = 30
-    
-    # Add coat of arms (top left)
-    coat_of_arms = create_sa_coat_of_arms((50, 50))
-    license_img.paste(coat_of_arms, (20, header_y - 10), coat_of_arms)
-    
-    # Title
-    draw.text((width//2, header_y), "DRIVING LICENCE", fill=(0, 0, 0), font=fonts["title"], anchor="mm")
-    draw.text((width//2, header_y + 25), "REPUBLIC OF SOUTH AFRICA", fill=(0, 0, 0), font=fonts["small"], anchor="mm")
-    
-    # Photo section (left side)
-    photo_x, photo_y = 30, 100
-    photo_width, photo_height = 140, 180
-    
-    # Process and add photo
-    photo = download_and_process_photo(photo_url, (photo_width, photo_height))
-    if photo:
-        license_img.paste(photo, (photo_x, photo_y))
-    else:
-        # Photo placeholder
-        draw.rectangle([photo_x, photo_y, photo_x + photo_width, photo_y + photo_height], 
-                      outline=(0, 0, 0), width=2, fill=(240, 240, 240))
-        draw.text((photo_x + photo_width//2, photo_y + photo_height//2), "PHOTO", 
-                 fill=(100, 100, 100), font=fonts["regular"], anchor="mm")
-    
-    # Photo border
-    draw.rectangle([photo_x, photo_y, photo_x + photo_width, photo_y + photo_height], 
-                  outline=(0, 0, 0), width=2)
-    
-    # Signature area below photo
-    sig_y = photo_y + photo_height + 10
-    draw.rectangle([photo_x, sig_y, photo_x + photo_width, sig_y + 40], 
-                  outline=(0, 0, 0), width=1)
-    draw.text((photo_x + 5, sig_y + 5), "Signature:", fill=(0, 0, 0), font=fonts["tiny"])
-    
-    # Personal details section (right side)
-    details_x = photo_x + photo_width + 30
-    details_y = 100
-    line_height = 25
-    
-    # License details
-    details = [
-        ("Licence No:", license_data.get('license_number', 'N/A')),
-        ("Surname:", license_data.get('last_name', 'N/A')),
-        ("Names:", license_data.get('first_name', 'N/A')),
-        ("ID Number:", license_data.get('id_number', 'N/A')),
-        ("Date of Birth:", str(license_data.get('date_of_birth', 'N/A'))),
-        ("Issue Date:", str(license_data.get('issue_date', 'N/A'))),
-        ("Expiry Date:", str(license_data.get('expiry_date', 'N/A'))),
-        ("Category:", license_data.get('category', 'N/A')),
-    ]
-    
-    current_y = details_y
-    for label, value in details:
-        draw.text((details_x, current_y), label, fill=(0, 0, 0), font=fonts["small"])
-        draw.text((details_x + 100, current_y), str(value), fill=(0, 0, 0), font=fonts["regular"])
-        current_y += line_height
-    
-    # Add restrictions if any
-    if license_data.get('restrictions'):
-        current_y += 10
-        draw.text((details_x, current_y), "Restrictions:", fill=(0, 0, 0), font=fonts["small"])
-        current_y += 15
-        
-        # Wrap long restriction text
-        restriction_text = license_data.get('restrictions', '')
-        wrapped_text = textwrap.fill(restriction_text, width=30)
-        for line in wrapped_text.split('\n'):
-            draw.text((details_x, current_y), line, fill=(0, 0, 0), font=fonts["tiny"])
-            current_y += 12
-    
-    # Add watermark
-    watermark = create_watermark_pattern(width, height)
-    license_img = Image.alpha_composite(license_img.convert('RGBA'), watermark).convert('RGB')
-    
-    # Add holographic security strip (right edge)
-    security_strip_x = width - 30
-    for i in range(0, height, 10):
-        color = (200 + (i % 55), 150 + (i % 105), 255)
-        draw.rectangle([security_strip_x, i, width - 5, i + 5], fill=color)
-    
-    # Convert to base64
-    buffer = io.BytesIO()
-    license_img.save(buffer, format="PNG")
-    img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
-    
-    return img_str
-
-
-def generate_sa_license_back(license_data: Dict[str, Any]) -> str:
-    """Generate South African driver's license back side"""
-    # Standard credit card dimensions at 300 DPI
-    width, height = 1012, 638
-    
-    # Create base image
-    license_img = Image.new('RGB', (width, height), (255, 255, 255))
-    draw = ImageDraw.Draw(license_img)
-    
-    # Load fonts
-    fonts = load_fonts()
-    
-    # Add security background
-    security_overlay = Image.new('RGBA', (width, height), (255, 200, 200, 30))
-    license_img = Image.alpha_composite(license_img.convert('RGBA'), security_overlay).convert('RGB')
-    draw = ImageDraw.Draw(license_img)
-    
-    # Add border
-    draw.rectangle([5, 5, width-5, height-5], outline=(0, 0, 0), width=2)
-    
-    # Header
-    draw.text((30, 30), "DRIVER RESTRICTIONS", fill=(0, 0, 0), font=fonts["large"])
-    draw.text((30, 55), "Artificial Limb/Mechanical Aids", fill=(0, 0, 0), font=fonts["small"])
-    
-    # License categories section
-    categories_y = 100
-    draw.text((30, categories_y), "LICENCE CATEGORIES", fill=(0, 0, 0), font=fonts["regular"])
-    
-    # Define license categories with descriptions
-    categories = [
-        ("A", "Motorcycles"),
-        ("A1", "Motorcycles ≤ 125cc"),
-        ("B", "Light motor vehicles ≤ 3500kg"),
-        ("C1", "Medium trucks 3500-16000kg"),
-        ("C", "Heavy trucks > 16000kg"),
-        ("EB", "Light trailers with B"),
-        ("EC", "Heavy trailers with C")
-    ]
-    
-    # Draw categories in a grid
-    cat_start_y = categories_y + 30
-    col1_x, col2_x = 30, 300
-    
-    for i, (cat, desc) in enumerate(categories):
-        x = col1_x if i < 4 else col2_x
-        y = cat_start_y + (i % 4) * 30
-        
-        # Category box
-        draw.rectangle([x, y, x + 25, y + 20], outline=(0, 0, 0), width=1)
-        draw.text((x + 12, y + 10), cat, fill=(0, 0, 0), font=fonts["small"], anchor="mm")
-        
-        # Description
-        draw.text((x + 35, y + 10), desc, fill=(0, 0, 0), font=fonts["tiny"], anchor="lm")
-    
-    # Fingerprint area (bottom left)
-    fingerprint_x, fingerprint_y = 50, height - 180
-    fingerprint_size = 120
-    
-    draw.rectangle([fingerprint_x, fingerprint_y, fingerprint_x + fingerprint_size, 
-                   fingerprint_y + fingerprint_size], outline=(0, 0, 0), width=2)
-    
-    # Create fingerprint pattern
-    for i in range(5, fingerprint_size - 5, 3):
-        for j in range(5, fingerprint_size - 5, 3):
-            if (i + j) % 6 < 3:
-                draw.point((fingerprint_x + i, fingerprint_y + j), fill=(0, 0, 0))
-    
-    draw.text((fingerprint_x + fingerprint_size//2, fingerprint_y + fingerprint_size + 10), 
-             "RIGHT THUMB", fill=(0, 0, 0), font=fonts["tiny"], anchor="mm")
-    
-    # Barcode area (right side)
-    barcode_x = width - 200
-    barcode_y = 100
-    barcode_width = 150
-    barcode_height = height - 200
-    
-    # Generate barcode pattern
-    barcode_data = f"{license_data.get('license_number', '')}{license_data.get('id_number', '')}"
-    
-    # Create simple barcode pattern
-    for i in range(0, barcode_height, 2):
-        bar_width = 1 if (hash(barcode_data + str(i)) % 3) == 0 else 3
-        draw.rectangle([barcode_x, barcode_y + i, barcode_x + bar_width, barcode_y + i + 1], 
-                      fill=(0, 0, 0))
-    
-    # Add QR code
-    qr_data = {
-        "license_number": license_data.get('license_number'),
-        "id_number": license_data.get('id_number'),
-        "category": license_data.get('category'),
-        "expiry_date": license_data.get('expiry_date')
-    }
-    
-    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=3, border=1)
-    qr.add_data(json.dumps(qr_data, default=serialize_date))
-    qr.make(fit=True)
-    qr_img = qr.make_image(fill_color="black", back_color="white")
-    
-    # Paste QR code
-    qr_pos = (barcode_x + 30, barcode_y + barcode_height - 100)
-    license_img.paste(qr_img, qr_pos)
-    
-    # Add watermark
-    watermark = create_watermark_pattern(width, height)
-    license_img = Image.alpha_composite(license_img.convert('RGBA'), watermark).convert('RGB')
-    
-    # Authority information
-    draw.text((width//2, height - 30), "Department of Transport - Republic of South Africa", 
-             fill=(0, 0, 0), font=fonts["tiny"], anchor="mm")
-    
-    # Convert to base64
-    buffer = io.BytesIO()
-    license_img.save(buffer, format="PNG")
-    img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
-    
-    return img_str
-
-
-def generate_watermark_template(width=1012, height=638, text="SOUTH AFRICA") -> str:
-    """Generate a standalone watermark template"""
-    watermark = create_watermark_pattern(width, height, text)
-    
-    # Convert to base64
-    buffer = io.BytesIO()
-    watermark.save(buffer, format="PNG")
-    img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
-    
-    return img_str
-
-
 # Legacy functions for backward compatibility
 def generate_license_qr_code(license_data: Dict[str, Any]) -> str:
-    """Generate a QR code containing license information (legacy function)"""
+    """Generate a QR code containing license information"""
     json_data = json.dumps(license_data, default=serialize_date)
     
     qr = qrcode.QRCode(
@@ -407,10 +262,408 @@ def generate_license_qr_code(license_data: Dict[str, Any]) -> str:
 
 
 def generate_license_barcode_data(license_number: str, id_number: str) -> str:
-    """Generate barcode data for a license (legacy function)"""
+    """Generate barcode data for a license"""
     return f"{license_number.replace('-', '')}:{id_number}"
 
 
 def generate_license_preview(license_data: Dict[str, Any], photo_url: Optional[str] = None) -> str:
-    """Generate license preview (legacy function - now uses SA front template)"""
-    return generate_sa_license_front(license_data, photo_url)
+    """Generate license preview (now uses professional SA front template)"""
+    return generate_sa_license_front_professional(license_data, photo_url)
+
+
+# Professional SA license functions (now the default)
+def generate_sa_license_front(license_data: Dict[str, Any], photo_url: Optional[str] = None) -> str:
+    """Generate South African driver's license front side (professional version)"""
+    return generate_sa_license_front_professional(license_data, photo_url)
+
+
+def generate_sa_license_back(license_data: Dict[str, Any]) -> str:
+    """Generate South African driver's license back side (professional version)"""
+    return generate_sa_license_back_professional(license_data)
+
+
+def generate_watermark_template(width=1012, height=638, text="SOUTH AFRICA") -> str:
+    """Generate a standalone watermark template (professional version)"""
+    return generate_watermark_template_professional(width, height, text)
+
+
+class SALicenseGenerator:
+    """Professional South African Driver's License Generator"""
+    
+    def __init__(self):
+        self.base_path = os.path.dirname(os.path.abspath(__file__))
+        self.assets_path = os.path.join(self.base_path, "..", "assets")
+        self.fonts = self._load_fonts()
+    
+    def _load_fonts(self) -> Dict[str, ImageFont.FreeTypeFont]:
+        """Load fonts with fallbacks for different systems"""
+        fonts = {}
+        
+        # Font search paths
+        font_paths = [
+            # Custom fonts directory
+            os.path.join(self.base_path, "..", "assets", "fonts"),
+            # System fonts
+            "C:/Windows/Fonts",  # Windows
+            "/System/Library/Fonts",  # macOS
+            "/usr/share/fonts/truetype/dejavu",  # Linux
+        ]
+        
+        # Bold font options for labels
+        bold_font_options = [
+            "SourceSansPro-Bold.ttf",
+            "ARIALBD.TTF",
+            "dejavu-sans.bold.ttf",
+            "Arial-Bold.ttf",
+            "DejaVuSans-Bold.ttf",
+        ]
+        
+        # Regular font options for values
+        regular_font_options = [
+            "SourceSansPro-Regular.ttf",
+            "arial.ttf",
+            "Arial.ttf",
+            "DejaVuSans.ttf",
+        ]
+        
+        # Load fonts for each size
+        for size_name, size in FONT_SIZES.items():
+            font_loaded = False
+            
+            # Determine which font list to use
+            if size_name == "field_label":
+                font_options = bold_font_options
+            else:
+                # For field_value, use regular fonts; for others, try bold first then regular
+                font_options = regular_font_options if size_name == "field_value" else bold_font_options + regular_font_options
+            
+            # Try to find a suitable font
+            for font_dir in font_paths:
+                if not os.path.exists(font_dir):
+                    continue
+                    
+                for font_file in font_options:
+                    font_path = os.path.join(font_dir, font_file)
+                    try:
+                        fonts[size_name] = ImageFont.truetype(font_path, size)
+                        font_loaded = True
+                        break
+                    except (IOError, OSError):
+                        continue
+                
+                if font_loaded:
+                    break
+            
+            # Fallback to default font
+            if not font_loaded:
+                fonts[size_name] = ImageFont.load_default()
+        
+        return fonts
+    
+    def _create_security_background(self, width: int, height: int) -> Image.Image:
+        """Create security background pattern"""
+        # Try to load the new grid-based template first
+        template_path = os.path.join(self.assets_path, "overlays", "Card_BG_Front.png")
+        if os.path.exists(template_path):
+            try:
+                background = Image.open(template_path).convert('RGBA')
+                # Resize to exact dimensions if needed
+                if background.size != (width, height):
+                    background = background.resize((width, height), Image.Resampling.LANCZOS)
+                return background
+            except Exception as e:
+                print(f"Warning: Could not load Card_BG_Front template: {e}")
+        
+        # Fallback: Create programmatic background
+        background = Image.new('RGBA', (width, height), COLORS["white"] + (255,))
+        return background
+    
+    def _create_back_security_background(self, width: int, height: int) -> Image.Image:
+        """Create security background pattern for back side"""
+        # Try to load the back template first
+        template_path = os.path.join(self.assets_path, "overlays", "Card_BG_Back.png")
+        if os.path.exists(template_path):
+            try:
+                background = Image.open(template_path).convert('RGBA')
+                # Resize to exact dimensions if needed
+                if background.size != (width, height):
+                    background = background.resize((width, height), Image.Resampling.LANCZOS)
+                return background
+            except Exception as e:
+                print(f"Warning: Could not load Card_BG_Back template: {e}")
+        
+        # Fallback: Use the same method as front
+        return self._create_security_background(width, height)
+    
+    def _create_watermark_pattern(self, width: int, height: int, text: str = "SOUTH AFRICA") -> Image.Image:
+        """Create diagonal watermark pattern"""
+        # Try to load watermark from file first
+        watermark_path = os.path.join(self.assets_path, "overlays", "watermark_pattern.png")
+        if os.path.exists(watermark_path):
+            try:
+                watermark = Image.open(watermark_path).convert('RGBA')
+                # Resize to exact dimensions if needed
+                if watermark.size != (width, height):
+                    watermark = watermark.resize((width, height), Image.Resampling.LANCZOS)
+                return watermark
+            except Exception as e:
+                print(f"Warning: Could not load watermark overlay: {e}")
+        
+        # Fallback: Create programmatic watermark
+        watermark = Image.new('RGBA', (width * 2, height * 2), (255, 255, 255, 0))
+        draw = ImageDraw.Draw(watermark)
+        
+        # Use title font for watermark
+        font = self.fonts["title"]
+        
+        # Calculate text dimensions
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        
+        # Create diagonal pattern
+        for y in range(-text_height, height * 2 + text_height, text_height * 4):
+            for x in range(-text_width, width * 2 + text_width, text_width * 3):
+                # Alternate between normal and rotated text
+                if (x // (text_width * 3) + y // (text_height * 4)) % 2 == 0:
+                    draw.text((x, y), text, fill=COLORS["watermark"], font=font)
+                else:
+                    # Create rotated text
+                    temp_img = Image.new('RGBA', (text_width + 40, text_height + 40), (255, 255, 255, 0))
+                    temp_draw = ImageDraw.Draw(temp_img)
+                    temp_draw.text((20, 20), text, fill=COLORS["watermark"], font=font)
+                    rotated = temp_img.rotate(15, expand=1)
+                    watermark.paste(rotated, (x, y), rotated)
+        
+        # Crop to original size
+        return watermark.crop((0, 0, width, height))
+    
+    def _download_and_process_photo(self, photo_url: str) -> Optional[Image.Image]:
+        """Download and process photo to exact specifications"""
+        if not photo_url:
+            return None
+        
+        try:
+            response = requests.get(photo_url, timeout=10)
+            response.raise_for_status()
+            
+            # Open and process the image
+            photo = Image.open(io.BytesIO(response.content))
+            
+            # Convert to RGB if necessary
+            if photo.mode != 'RGB':
+                photo = photo.convert('RGB')
+            
+            # Calculate exact photo dimensions (18 × 22 mm at 300 DPI)
+            photo_w = int(18 * MM_TO_INCH * DPI)  # 213 px
+            photo_h = int(22 * MM_TO_INCH * DPI)  # 260 px
+            
+            # Resize maintaining aspect ratio
+            photo.thumbnail((photo_w, photo_h), Image.Resampling.LANCZOS)
+            
+            # Create final photo with exact dimensions
+            final_photo = Image.new('RGB', (photo_w, photo_h), COLORS["white"])
+            paste_x = (photo_w - photo.width) // 2
+            paste_y = (photo_h - photo.height) // 2
+            final_photo.paste(photo, (paste_x, paste_y))
+            
+            return final_photo
+            
+        except Exception as e:
+            print(f"Error processing photo: {e}")
+            return None
+    
+    def _generate_pdf417_barcode(self, data: str) -> Image.Image:
+        """Generate PDF417 barcode for license data"""
+        try:
+            # Generate PDF417 barcode
+            barcode = pdf417gen.encode(data, columns=14, security_level=5)
+            barcode_img = pdf417gen.render_image(barcode, padding=2, scale=2)
+            
+            # Calculate target size
+            target_w = BACK_COORDINATES["barcode"][2] - BACK_COORDINATES["barcode"][0]
+            target_h = BACK_COORDINATES["barcode"][3] - BACK_COORDINATES["barcode"][1]
+            
+            # Resize to fit
+            barcode_img = barcode_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            
+            return barcode_img
+            
+        except Exception as e:
+            print(f"Error generating PDF417 barcode: {e}")
+            # Return placeholder
+            target_w = BACK_COORDINATES["barcode"][2] - BACK_COORDINATES["barcode"][0]
+            target_h = BACK_COORDINATES["barcode"][3] - BACK_COORDINATES["barcode"][1]
+            placeholder = Image.new('RGB', (target_w, target_h), COLORS["white"])
+            draw = ImageDraw.Draw(placeholder)
+            draw.rectangle([0, 0, target_w-1, target_h-1], outline=COLORS["black"], width=1)
+            draw.text((target_w//2, target_h//2), "BARCODE", fill=COLORS["black"], 
+                     font=self.fonts["small"], anchor="mm")
+            return placeholder
+    
+    def generate_front(self, license_data: Dict[str, Any], photo_url: Optional[str] = None) -> str:
+        """Generate professional SA license front side using grid-based layout"""
+        
+        # Create base image with grid-based background template
+        license_img = self._create_security_background(CARD_W_PX, CARD_H_PX)
+        draw = ImageDraw.Draw(license_img)
+        
+        # Process and add photo in grid position (Columns 1-2, Rows 2-5)
+        photo = self._download_and_process_photo(photo_url)
+        photo_pos = FRONT_COORDINATES["photo"]
+        
+        if photo:
+            # Resize photo to fit the grid area
+            photo_resized = photo.resize((photo_pos[2], photo_pos[3]), Image.Resampling.LANCZOS)
+            license_img.paste(photo_resized, (photo_pos[0], photo_pos[1]))
+        else:
+            # Photo placeholder (no border)
+            draw.rectangle([photo_pos[0], photo_pos[1], 
+                          photo_pos[0] + photo_pos[2], photo_pos[1] + photo_pos[3]], 
+                         fill=(240, 240, 240))
+            photo_center_x = photo_pos[0] + photo_pos[2] // 2
+            photo_center_y = photo_pos[1] + photo_pos[3] // 2
+            draw.text((photo_center_x, photo_center_y), "PHOTO", 
+                     fill=(100, 100, 100), font=self.fonts["field_value"], anchor="mm")
+        
+        # Information area: Columns 3-6, Rows 2-5 (separate columns for labels and values)
+        labels_x = FRONT_COORDINATES["labels_column_x"]
+        values_x = FRONT_COORDINATES["values_column_x"]
+        info_y = FRONT_COORDINATES["info_start_y"]
+        line_height = FRONT_COORDINATES["line_height"]
+        
+        # Define information fields with labels and values
+        info_fields = [
+            ("Surname", license_data.get('last_name', 'N/A')),
+            ("Name", license_data.get('first_name', 'N/A')),
+            ("Date of Birth", license_data.get('date_of_birth', 'N/A')),
+            ("Gender", license_data.get('gender', 'N/A')),
+            ("ID No", license_data.get('id_number', 'N/A')),
+            ("Valid", f"{license_data.get('issue_date', 'N/A')} - {license_data.get('expiry_date', 'N/A')}"),
+            ("Issued", license_data.get('issued_location', 'South Africa')),
+            ("Licence No", license_data.get('license_number', 'N/A')),
+            ("Code", license_data.get('category', 'N/A')),
+            ("Restrictions", license_data.get('restrictions', '0')),
+            ("First Issue", license_data.get('first_issue_date', 'N/A')),
+        ]
+        
+        # Draw information fields with column-based layout
+        current_y = info_y
+        for label, value in info_fields:
+            # Draw label in labels column (bold)
+            draw.text((labels_x, current_y), label, 
+                     fill=COLORS["black"], font=self.fonts["field_label"])
+            
+            # Draw value in values column (regular)
+            draw.text((values_x, current_y), str(value), 
+                     fill=COLORS["black"], font=self.fonts["field_value"])
+            
+            current_y += line_height
+        
+        # Convert to base64 (no watermark overlay)
+        buffer = io.BytesIO()
+        license_img.save(buffer, format="PNG", dpi=(DPI, DPI))
+        return base64.b64encode(buffer.getvalue()).decode('utf-8')
+    
+    def generate_back(self, license_data: Dict[str, Any]) -> str:
+        """Generate professional SA license back side"""
+        
+        # Create base image with back security background
+        license_img = self._create_back_security_background(CARD_W_PX, CARD_H_PX)
+        draw = ImageDraw.Draw(license_img)
+        
+        # Generate and add PDF417 barcode in row 1 (all 6 columns)
+        barcode_data = json.dumps({
+            "license_number": license_data.get('license_number'),
+            "id_number": license_data.get('id_number'),
+            "category": license_data.get('category'),
+            "expiry_date": str(license_data.get('expiry_date')),
+            "issue_date": str(license_data.get('issue_date')),
+        })
+        
+        barcode_img = self._generate_pdf417_barcode(barcode_data)
+        barcode_coords = BACK_COORDINATES["barcode"]
+        
+        # Resize barcode to fit the grid area
+        barcode_resized = barcode_img.resize((barcode_coords[2], barcode_coords[3]), Image.Resampling.LANCZOS)
+        license_img.paste(barcode_resized, (barcode_coords[0], barcode_coords[1]))
+        
+        # Add fingerprint area in bottom-right corner (columns 5-6, rows 5-6)
+        fp_coords = BACK_COORDINATES["fingerprint"]
+        
+        # Draw fingerprint border
+        draw.rectangle([fp_coords[0], fp_coords[1], 
+                       fp_coords[0] + fp_coords[2], fp_coords[1] + fp_coords[3]], 
+                      outline=COLORS["black"], width=2)
+        
+        # Create fingerprint pattern
+        fp_center_x = fp_coords[0] + fp_coords[2] // 2
+        fp_center_y = fp_coords[1] + fp_coords[3] // 2
+        
+        # Simple fingerprint pattern
+        for i in range(0, fp_coords[2], 3):
+            for j in range(0, fp_coords[3], 3):
+                if (i + j) % 6 < 3:
+                    draw.point((fp_coords[0] + i, fp_coords[1] + j), fill=COLORS["black"])
+        
+        # Add fingerprint label below the area
+        draw.text((fp_center_x, fp_coords[1] + fp_coords[3] + 10), "RIGHT THUMB", 
+                 fill=COLORS["black"], font=self.fonts["tiny"], anchor="mm")
+        
+        # Convert to base64 (no watermark overlay)
+        buffer = io.BytesIO()
+        license_img.save(buffer, format="PNG", dpi=(DPI, DPI))
+        return base64.b64encode(buffer.getvalue()).decode('utf-8')
+    
+    def generate_watermark_template(self, width: int = CARD_W_PX, height: int = CARD_H_PX, 
+                                  text: str = "SOUTH AFRICA") -> str:
+        """Generate standalone watermark template"""
+        watermark = self._create_watermark_pattern(width, height, text)
+        
+        buffer = io.BytesIO()
+        watermark.save(buffer, format="PNG", dpi=(DPI, DPI))
+        return base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+
+# Singleton instance
+sa_license_generator = SALicenseGenerator()
+
+
+# Professional SA license functions (using the class instance)
+def generate_sa_license_front_professional(license_data: Dict[str, Any], 
+                                         photo_url: Optional[str] = None) -> str:
+    """Generate professional SA license front side"""
+    return sa_license_generator.generate_front(license_data, photo_url)
+
+
+def generate_sa_license_back_professional(license_data: Dict[str, Any]) -> str:
+    """Generate professional SA license back side"""
+    return sa_license_generator.generate_back(license_data)
+
+
+def generate_watermark_template_professional(width: int = CARD_W_PX, height: int = CARD_H_PX, 
+                                           text: str = "SOUTH AFRICA") -> str:
+    """Generate professional watermark template"""
+    return sa_license_generator.generate_watermark_template(width, height, text)
+
+
+def get_license_specifications() -> Dict[str, Any]:
+    """Get license specifications and coordinates"""
+    return {
+        "dimensions": {
+            "width_mm": CARD_W_MM,
+            "height_mm": CARD_H_MM,
+            "width_px": CARD_W_PX,
+            "height_px": CARD_H_PX,
+            "dpi": DPI,
+        },
+        "coordinates": {
+            "front": FRONT_COORDINATES,
+            "back": BACK_COORDINATES,
+        },
+        "font_sizes": FONT_SIZES,
+        "colors": COLORS,
+    }
+
+
+# Legacy functions for backward compatibility

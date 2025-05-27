@@ -16,12 +16,7 @@ from app.services.license_generator import (
     generate_license_preview,
     generate_sa_license_front,
     generate_sa_license_back,
-    generate_watermark_template
-)
-from app.services.sa_license_generator import (
-    generate_sa_license_front_professional,
-    generate_sa_license_back_professional,
-    generate_watermark_template_professional,
+    generate_watermark_template,
     get_license_specifications
 )
 
@@ -511,158 +506,6 @@ def get_sa_license_front_preview(
 ) -> Any:
     """
     Generate a South African driver's license front side preview.
-    Returns a base64 encoded PNG image.
-    """
-    # Get license with citizen
-    license = crud.license.get(db, id=license_id)
-    if not license:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="License not found",
-        )
-    
-    citizen = crud.citizen.get(db, id=license.citizen_id)
-    if not citizen:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Citizen not found",
-        )
-    
-    # Prepare license data
-    license_data = {
-        "license_number": license.license_number,
-        "category": license.category.value,
-        "issue_date": license.issue_date,
-        "expiry_date": license.expiry_date,
-        "status": license.status.value,
-        "id_number": citizen.id_number,
-        "first_name": citizen.first_name,
-        "last_name": citizen.last_name,
-        "date_of_birth": citizen.date_of_birth,
-        "restrictions": license.restrictions,
-        "medical_conditions": license.medical_conditions,
-    }
-    
-    # Generate front side preview
-    preview = generate_sa_license_front(license_data, citizen.photo_url)
-    
-    # Log action
-    crud.audit_log.create(
-        db,
-        obj_in={
-            "user_id": current_user.id,
-            "action_type": ActionType.READ,
-            "resource_type": ResourceType.LICENSE,
-            "resource_id": str(license.id),
-            "description": f"User {current_user.username} generated SA front preview for license {license.license_number}"
-        }
-    )
-    
-    return {"preview": preview}
-
-
-@router.get("/{license_id}/preview/back", response_model=Dict[str, str])
-def get_sa_license_back_preview(
-    *,
-    db: Session = Depends(get_db),
-    license_id: int,
-    current_user: User = Depends(get_current_active_user),
-) -> Any:
-    """
-    Generate a South African driver's license back side preview.
-    Returns a base64 encoded PNG image.
-    """
-    # Get license with citizen
-    license = crud.license.get(db, id=license_id)
-    if not license:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="License not found",
-        )
-    
-    citizen = crud.citizen.get(db, id=license.citizen_id)
-    if not citizen:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Citizen not found",
-        )
-    
-    # Prepare license data
-    license_data = {
-        "license_number": license.license_number,
-        "category": license.category.value,
-        "issue_date": license.issue_date,
-        "expiry_date": license.expiry_date,
-        "status": license.status.value,
-        "id_number": citizen.id_number,
-        "first_name": citizen.first_name,
-        "last_name": citizen.last_name,
-        "date_of_birth": citizen.date_of_birth,
-        "restrictions": license.restrictions,
-        "medical_conditions": license.medical_conditions,
-    }
-    
-    # Generate back side preview
-    preview = generate_sa_license_back(license_data)
-    
-    # Log action
-    crud.audit_log.create(
-        db,
-        obj_in={
-            "user_id": current_user.id,
-            "action_type": ActionType.READ,
-            "resource_type": ResourceType.LICENSE,
-            "resource_id": str(license.id),
-            "description": f"User {current_user.username} generated SA back preview for license {license.license_number}"
-        }
-    )
-    
-    return {"preview": preview}
-
-
-@router.get("/watermark-template", response_model=Dict[str, str])
-def get_watermark_template(
-    *,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    width: int = 1012,
-    height: int = 638,
-    text: str = "SOUTH AFRICA"
-) -> Any:
-    """
-    Generate a watermark template for license printing.
-    Returns a base64 encoded PNG image of the watermark pattern.
-    """
-    # Generate watermark template
-    watermark = generate_watermark_template(width, height, text)
-    
-    # Log action (no specific license, so no resource_id)
-    crud.audit_log.create(
-        db,
-        obj_in={
-            "user_id": current_user.id,
-            "action_type": ActionType.READ,
-            "resource_type": ResourceType.LICENSE,
-            "description": f"User {current_user.username} generated watermark template ({width}x{height})"
-        }
-    )
-    
-    return {
-        "watermark": watermark,
-        "dimensions": f"{width}x{height}",
-        "text": text
-    }
-
-
-@router.get("/{license_id}/preview/front/professional", response_model=Dict[str, str])
-def get_sa_license_front_preview_professional(
-    *,
-    db: Session = Depends(get_db),
-    license_id: int,
-    current_user: User = Depends(get_current_active_user),
-) -> Any:
-    """
-    Generate a professional South African driver's license front side preview.
     Uses exact ISO specifications and coordinates.
     Returns a base64 encoded PNG image at 300 DPI.
     """
@@ -697,7 +540,7 @@ def get_sa_license_front_preview_professional(
     }
     
     # Generate professional front side preview
-    preview = generate_sa_license_front_professional(license_data, citizen.photo_url)
+    preview = generate_sa_license_front(license_data, citizen.photo_url)
     
     # Log action
     crud.audit_log.create(
@@ -707,7 +550,7 @@ def get_sa_license_front_preview_professional(
             "action_type": ActionType.READ,
             "resource_type": ResourceType.LICENSE,
             "resource_id": str(license.id),
-            "description": f"User {current_user.username} generated professional SA front preview for license {license.license_number}"
+            "description": f"User {current_user.username} generated SA front preview for license {license.license_number}"
         }
     )
     
@@ -719,15 +562,15 @@ def get_sa_license_front_preview_professional(
     }
 
 
-@router.get("/{license_id}/preview/back/professional", response_model=Dict[str, str])
-def get_sa_license_back_preview_professional(
+@router.get("/{license_id}/preview/back", response_model=Dict[str, str])
+def get_sa_license_back_preview(
     *,
     db: Session = Depends(get_db),
     license_id: int,
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Generate a professional South African driver's license back side preview.
+    Generate a South African driver's license back side preview.
     Uses exact ISO specifications with PDF417 barcode.
     Returns a base64 encoded PNG image at 300 DPI.
     """
@@ -762,7 +605,7 @@ def get_sa_license_back_preview_professional(
     }
     
     # Generate professional back side preview
-    preview = generate_sa_license_back_professional(license_data)
+    preview = generate_sa_license_back(license_data)
     
     # Log action
     crud.audit_log.create(
@@ -772,7 +615,7 @@ def get_sa_license_back_preview_professional(
             "action_type": ActionType.READ,
             "resource_type": ResourceType.LICENSE,
             "resource_id": str(license.id),
-            "description": f"User {current_user.username} generated professional SA back preview for license {license.license_number}"
+            "description": f"User {current_user.username} generated SA back preview for license {license.license_number}"
         }
     )
     
@@ -785,8 +628,8 @@ def get_sa_license_back_preview_professional(
     }
 
 
-@router.get("/watermark-template/professional", response_model=Dict[str, str])
-def get_watermark_template_professional(
+@router.get("/watermark-template", response_model=Dict[str, str])
+def get_watermark_template(
     *,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -795,21 +638,21 @@ def get_watermark_template_professional(
     text: str = "SOUTH AFRICA"
 ) -> Any:
     """
-    Generate a professional watermark template for license printing.
+    Generate a watermark template for license printing.
     Uses exact ISO specifications and dimensions.
     Returns a base64 encoded PNG image of the watermark pattern.
     """
     # Generate professional watermark template
-    watermark = generate_watermark_template_professional(width, height, text)
+    watermark = generate_watermark_template(width, height, text)
     
-    # Log action
+    # Log action (no specific license, so no resource_id)
     crud.audit_log.create(
         db,
         obj_in={
             "user_id": current_user.id,
             "action_type": ActionType.READ,
             "resource_type": ResourceType.LICENSE,
-            "description": f"User {current_user.username} generated professional watermark template ({width}x{height})"
+            "description": f"User {current_user.username} generated watermark template ({width}x{height})"
         }
     )
     
