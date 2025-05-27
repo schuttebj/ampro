@@ -78,7 +78,7 @@ FRONT_COORDINATES = {
     "labels_column_x": GRID_POSITIONS["r2c3"][0],  # Labels in column 3
     "values_column_x": GRID_POSITIONS["r2c4"][0],  # Values in column 4-6
     "info_start_y": GRID_POSITIONS["r2c3"][1],
-    "line_height": 44,  # Increased from 22 to 44 for 18-22pt gap between items
+    "line_height": 37,  # Reduced from 44 to 37 (about 15% less spacing)
     
     # Signature area: Row 6, Columns 1-6 (just signature, no label)
     "signature": (
@@ -90,17 +90,27 @@ FRONT_COORDINATES = {
 }
 
 BACK_COORDINATES = {
-    # PDF417 barcode area
-    "barcode": (30, 340, 30+458, 340+38),
+    # PDF417 barcode area - Row 1, all 6 columns
+    "barcode": (
+        GRID_POSITIONS["r1c1"][0],  # x
+        GRID_POSITIONS["r1c1"][1],  # y
+        GRID_POSITIONS["r1c6"][0] + GRID_POSITIONS["r1c6"][2] - GRID_POSITIONS["r1c1"][0],  # width (6 columns)
+        GRID_POSITIONS["r1c1"][3]   # height (1 row)
+    ),
     
-    # Fingerprint area
-    "fingerprint": (50, 450, 170, 570),
+    # Fingerprint area - Bottom-right corner (columns 5-6, rows 5-6)
+    "fingerprint": (
+        GRID_POSITIONS["r5c5"][0],  # x
+        GRID_POSITIONS["r5c5"][1],  # y
+        GRID_POSITIONS["r6c6"][0] + GRID_POSITIONS["r6c6"][2] - GRID_POSITIONS["r5c5"][0],  # width (2 columns)
+        GRID_POSITIONS["r6c6"][1] + GRID_POSITIONS["r6c6"][3] - GRID_POSITIONS["r5c5"][1]   # height (2 rows)
+    ),
     
-    # License categories grid
+    # License categories grid (will be positioned later if needed)
     "categories_start": (30, 100),
     "category_spacing": (120, 35),
     
-    # Restrictions header
+    # Restrictions header (will be positioned later if needed)
     "restrictions_header": (30, 30),
 }
 
@@ -201,7 +211,7 @@ class SALicenseGenerator:
     def _create_security_background(self, width: int, height: int) -> Image.Image:
         """Create security background pattern"""
         # Try to load the new grid-based template first
-        template_path = os.path.join(self.assets_path, "overlays", "Card_BG_Back.png")
+        template_path = os.path.join(self.assets_path, "overlays", "Card_BG_Front.png")
         if os.path.exists(template_path):
             try:
                 background = Image.open(template_path).convert('RGBA')
@@ -210,7 +220,7 @@ class SALicenseGenerator:
                     background = background.resize((width, height), Image.Resampling.LANCZOS)
                 return background
             except Exception as e:
-                print(f"Warning: Could not load Card_BG_Back template: {e}")
+                print(f"Warning: Could not load Card_BG_Front template: {e}")
         
         # Try to load overlay from file first
         overlay_path = os.path.join(self.assets_path, "overlays", "security_background.png")
@@ -243,6 +253,23 @@ class SALicenseGenerator:
         background = Image.alpha_composite(background, overlay)
         
         return background
+    
+    def _create_back_security_background(self, width: int, height: int) -> Image.Image:
+        """Create security background pattern for back side"""
+        # Try to load the back template first
+        template_path = os.path.join(self.assets_path, "overlays", "Card_BG_Back.png")
+        if os.path.exists(template_path):
+            try:
+                background = Image.open(template_path).convert('RGBA')
+                # Resize to exact dimensions if needed
+                if background.size != (width, height):
+                    background = background.resize((width, height), Image.Resampling.LANCZOS)
+                return background
+            except Exception as e:
+                print(f"Warning: Could not load Card_BG_Back template: {e}")
+        
+        # Fallback: Use the same method as front
+        return self._create_security_background(width, height)
     
     def _create_watermark_pattern(self, width: int, height: int, text: str = "SOUTH AFRICA") -> Image.Image:
         """Create diagonal watermark pattern"""
@@ -463,59 +490,11 @@ class SALicenseGenerator:
     def generate_back(self, license_data: Dict[str, Any]) -> str:
         """Generate professional SA license back side"""
         
-        # Create base image with security background
-        license_img = self._create_security_background(CARD_W_PX, CARD_H_PX)
+        # Create base image with back security background
+        license_img = self._create_back_security_background(CARD_W_PX, CARD_H_PX)
         draw = ImageDraw.Draw(license_img)
         
-        # Add border
-        draw.rectangle([2, 2, CARD_W_PX-2, CARD_H_PX-2], outline=COLORS["black"], width=2)
-        
-        # Add restrictions header
-        draw.text(BACK_COORDINATES["restrictions_header"], "DRIVER RESTRICTIONS", 
-                 fill=COLORS["black"], font=self.fonts["title"])
-        draw.text((BACK_COORDINATES["restrictions_header"][0], 
-                  BACK_COORDINATES["restrictions_header"][1] + 25), 
-                 "Artificial Limb/Mechanical Aids", 
-                 fill=COLORS["black"], font=self.fonts["small"])
-        
-        # Add license categories
-        categories_start = BACK_COORDINATES["categories_start"]
-        spacing = BACK_COORDINATES["category_spacing"]
-        
-        draw.text((categories_start[0], categories_start[1] - 20), "LICENCE CATEGORIES", 
-                 fill=COLORS["black"], font=self.fonts["field_value"])
-        
-        for i, (cat, (desc, icon)) in enumerate(LICENSE_CATEGORIES.items()):
-            row = i % 4
-            col = i // 4
-            
-            x = categories_start[0] + col * 250
-            y = categories_start[1] + row * spacing[1]
-            
-            # Category box
-            draw.rectangle([x, y, x + 30, y + 25], outline=COLORS["black"], width=1)
-            draw.text((x + 15, y + 12), cat, fill=COLORS["black"], 
-                     font=self.fonts["field_label"], anchor="mm")
-            
-            # Description
-            draw.text((x + 40, y + 12), f"{icon} {desc}", fill=COLORS["black"], 
-                     font=self.fonts["small"], anchor="lm")
-        
-        # Add fingerprint area
-        fp_box = BACK_COORDINATES["fingerprint"]
-        draw.rectangle(fp_box, outline=COLORS["black"], width=2)
-        
-        # Create fingerprint pattern
-        fp_size = 120
-        for i in range(5, fp_size - 5, 3):
-            for j in range(5, fp_size - 5, 3):
-                if (i + j) % 6 < 3:
-                    draw.point((fp_box[0] + i, fp_box[1] + j), fill=COLORS["black"])
-        
-        draw.text(((fp_box[0] + fp_box[2]) // 2, fp_box[3] + 10), "RIGHT THUMB", 
-                 fill=COLORS["black"], font=self.fonts["tiny"], anchor="mm")
-        
-        # Generate and add PDF417 barcode
+        # Generate and add PDF417 barcode in row 1 (all 6 columns)
         barcode_data = json.dumps({
             "license_number": license_data.get('license_number'),
             "id_number": license_data.get('id_number'),
@@ -525,12 +504,32 @@ class SALicenseGenerator:
         })
         
         barcode_img = self._generate_pdf417_barcode(barcode_data)
-        barcode_pos = BACK_COORDINATES["barcode"][:2]
-        license_img.paste(barcode_img, barcode_pos)
+        barcode_coords = BACK_COORDINATES["barcode"]
         
-        # Add authority information
-        draw.text((CARD_W_PX // 2, CARD_H_PX - 20), 
-                 "Department of Transport - Republic of South Africa", 
+        # Resize barcode to fit the grid area
+        barcode_resized = barcode_img.resize((barcode_coords[2], barcode_coords[3]), Image.Resampling.LANCZOS)
+        license_img.paste(barcode_resized, (barcode_coords[0], barcode_coords[1]))
+        
+        # Add fingerprint area in bottom-right corner (columns 5-6, rows 5-6)
+        fp_coords = BACK_COORDINATES["fingerprint"]
+        
+        # Draw fingerprint border
+        draw.rectangle([fp_coords[0], fp_coords[1], 
+                       fp_coords[0] + fp_coords[2], fp_coords[1] + fp_coords[3]], 
+                      outline=COLORS["black"], width=2)
+        
+        # Create fingerprint pattern
+        fp_center_x = fp_coords[0] + fp_coords[2] // 2
+        fp_center_y = fp_coords[1] + fp_coords[3] // 2
+        
+        # Simple fingerprint pattern
+        for i in range(0, fp_coords[2], 3):
+            for j in range(0, fp_coords[3], 3):
+                if (i + j) % 6 < 3:
+                    draw.point((fp_coords[0] + i, fp_coords[1] + j), fill=COLORS["black"])
+        
+        # Add fingerprint label below the area
+        draw.text((fp_center_x, fp_coords[1] + fp_coords[3] + 10), "RIGHT THUMB", 
                  fill=COLORS["black"], font=self.fonts["tiny"], anchor="mm")
         
         # Convert to base64 (no watermark overlay)
