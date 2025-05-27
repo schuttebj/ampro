@@ -714,7 +714,7 @@ def get_sa_license_front_preview_professional(
     return {
         "preview": preview,
         "format": "PNG",
-        "dpi": 300,
+        "dpi": "300",
         "dimensions": "1012x638 pixels (85.60x54.00 mm)"
     }
 
@@ -779,9 +779,9 @@ def get_sa_license_back_preview_professional(
     return {
         "preview": preview,
         "format": "PNG",
-        "dpi": 300,
+        "dpi": "300",
         "dimensions": "1012x638 pixels (85.60x54.00 mm)",
-        "features": ["PDF417 barcode", "fingerprint area", "license categories"]
+        "features": "PDF417 barcode, fingerprint area, license categories"
     }
 
 
@@ -818,7 +818,7 @@ def get_watermark_template_professional(
         "dimensions": f"{width}x{height}",
         "text": text,
         "format": "PNG",
-        "dpi": 300,
+        "dpi": "300",
         "specifications": "ISO/IEC 18013-1 compliant"
     }
 
