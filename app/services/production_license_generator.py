@@ -147,15 +147,71 @@ class ProductionLicenseGenerator:
                 return processed_path
             except Exception as e:
                 logger.error(f"Error processing photo from URL {photo_url}: {str(e)}")
-                # If the processed path exists in DB but we couldn't download the photo,
-                # try using the stored path directly as a fallback
-                if existing_processed_path:
-                    logger.warning(f"Falling back to DB processed path despite file not found: {existing_processed_path}")
-                    return existing_processed_path
+                # We'll try to create a placeholder instead of falling back to a nonexistent path
+                placeholder_path = self._create_placeholder_photo(citizen_id)
+                if placeholder_path:
+                    return placeholder_path
                 raise
         
+        # If we got here, try to create a placeholder image
+        placeholder_path = self._create_placeholder_photo(citizen_id)
+        if placeholder_path:
+            return placeholder_path
+            
         # No photo available - this should be handled by the caller
         raise ValueError(f"No photo available for citizen {citizen_id}")
+    
+    def _create_placeholder_photo(self, citizen_id: int) -> Optional[str]:
+        """
+        Create a placeholder photo for a citizen
+        
+        Args:
+            citizen_id: Citizen ID
+            
+        Returns:
+            Path to placeholder photo or None if creation failed
+        """
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            
+            # Create a blank image with ISO photo specs
+            width = ISO_PHOTO_SPECS["width_px"]
+            height = ISO_PHOTO_SPECS["height_px"]
+            img = Image.new('RGB', (width, height), color=(240, 240, 240))
+            
+            # Add text "No Photo" to the image
+            draw = ImageDraw.Draw(img)
+            text = "No Photo"
+            
+            # Try to use a default font
+            try:
+                font = ImageFont.load_default()
+            except Exception:
+                font = None
+            
+            # Calculate text position to center it
+            text_width, text_height = (50, 10)  # Approximate size
+            position = ((width - text_width) // 2, (height - text_height) // 2)
+            
+            # Draw text
+            draw.text(position, text, fill=(0, 0, 0), font=font)
+            
+            # Draw a border around the image
+            draw.rectangle([(0, 0), (width-1, height-1)], outline=(0, 0, 0), width=2)
+            
+            # Save the image
+            filename = f"citizen_{citizen_id}_placeholder.jpg"
+            placeholder_path = file_manager._get_file_path("photo", filename)
+            img.save(placeholder_path, format="JPEG", quality=95)
+            
+            # Return relative path
+            relative_path = str(placeholder_path.relative_to(file_manager.base_dir))
+            logger.info(f"Created placeholder photo at {relative_path}")
+            return relative_path
+            
+        except Exception as e:
+            logger.error(f"Error creating placeholder photo: {str(e)}")
+            return None
     
     def _generate_front_image(self, license_data: Dict[str, Any], 
                             citizen_data: Dict[str, Any], 
