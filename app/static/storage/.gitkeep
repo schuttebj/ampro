@@ -1,0 +1,5 @@
+# Keep storage directory structure in git
+# This directory will contain:
+# - licenses/ (generated license files)
+# - photos/ (citizen photos - original and processed)
+# - temp/ (temporary files - auto-cleaned) 

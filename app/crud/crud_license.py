@@ -1,5 +1,5 @@
-from typing import List, Optional
-from datetime import date
+from typing import List, Optional, Dict, Any
+from datetime import date, datetime
 import uuid
 
 from sqlalchemy.orm import Session
@@ -48,6 +48,92 @@ class CRUDLicense(CRUDBase[License, LicenseCreate, LicenseUpdate]):
         # Could be enhanced with more specific logic based on requirements
         unique_id = uuid.uuid4().hex[:12].upper()
         return f"L-{unique_id[:4]}-{unique_id[4:8]}-{unique_id[8:12]}"
+    
+    def update_file_paths(self, db: Session, *, license_id: int, file_paths: Dict[str, str]) -> Optional[License]:
+        """
+        Update license file paths after generation
+        
+        Args:
+            db: Database session
+            license_id: License ID
+            file_paths: Dictionary with file path keys and values
+        
+        Returns:
+            Updated license object
+        """
+        license_obj = self.get(db, id=license_id)
+        if not license_obj:
+            return None
+        
+        # Update file paths
+        update_data = {
+            "last_generated": datetime.now(),
+            "generation_version": file_paths.get("generator_version", "2.0")
+        }
+        
+        # Map file paths
+        path_mapping = {
+            "front_image_path": "front_image_path",
+            "back_image_path": "back_image_path", 
+            "front_pdf_path": "front_pdf_path",
+            "back_pdf_path": "back_pdf_path",
+            "combined_pdf_path": "combined_pdf_path",
+            "processed_photo_path": "processed_photo_path"
+        }
+        
+        for key, db_field in path_mapping.items():
+            if key in file_paths:
+                update_data[db_field] = file_paths[key]
+        
+        return self.update(db, db_obj=license_obj, obj_in=update_data)
+    
+    def get_licenses_needing_regeneration(self, db: Session, *, 
+                                        version_cutoff: str = "1.0", 
+                                        skip: int = 0, 
+                                        limit: int = 100) -> List[License]:
+        """
+        Get licenses that need regeneration due to version updates
+        
+        Args:
+            db: Database session
+            version_cutoff: Minimum version required
+            skip: Records to skip
+            limit: Maximum records to return
+        
+        Returns:
+            List of licenses needing regeneration
+        """
+        return (db.query(License)
+                .filter(
+                    (License.generation_version < version_cutoff) |
+                    (License.generation_version.is_(None)) |
+                    (License.last_generated.is_(None))
+                )
+                .offset(skip)
+                .limit(limit)
+                .all())
+    
+    def mark_for_regeneration(self, db: Session, *, license_id: int) -> Optional[License]:
+        """
+        Mark a license for regeneration by clearing generation timestamp
+        
+        Args:
+            db: Database session
+            license_id: License ID
+        
+        Returns:
+            Updated license object
+        """
+        license_obj = self.get(db, id=license_id)
+        if not license_obj:
+            return None
+        
+        update_data = {
+            "last_generated": None,
+            "generation_version": "1.0"  # Force regeneration
+        }
+        
+        return self.update(db, db_obj=license_obj, obj_in=update_data)
 
 
 class CRUDLicenseApplication(CRUDBase[LicenseApplication, LicenseApplicationCreate, LicenseApplicationUpdate]):

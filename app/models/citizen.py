@@ -1,6 +1,7 @@
-from sqlalchemy import Column, String, Date, ForeignKey, Text, Enum
+from sqlalchemy import Column, String, Date, ForeignKey, Text, Enum, DateTime
 from sqlalchemy.orm import relationship
 import enum
+from datetime import datetime
 
 from app.models.base import BaseModel
 
@@ -45,7 +46,13 @@ class Citizen(BaseModel):
     # Additional information
     birth_place = Column(String, nullable=True)
     nationality = Column(String, nullable=True)
-    photo_url = Column(String, nullable=True)
+    
+    # Photo management - enhanced for production use
+    photo_url = Column(String, nullable=True)  # External URL (original)
+    stored_photo_path = Column(String, nullable=True)  # Local stored copy
+    processed_photo_path = Column(String, nullable=True)  # ISO-compliant processed version
+    photo_uploaded_at = Column(DateTime, nullable=True)
+    photo_processed_at = Column(DateTime, nullable=True)
     
     # Relationships
     licenses = relationship("License", back_populates="citizen")

@@ -1,6 +1,7 @@
 from typing import Any, List, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from fastapi.encoders import jsonable_encoder
 
@@ -19,6 +20,8 @@ from app.services.license_generator import (
     generate_watermark_template,
     get_license_specifications
 )
+from app.services.production_license_generator import production_generator
+from app.services.file_manager import file_manager
 
 router = APIRouter()
 
@@ -675,4 +678,366 @@ def get_license_specifications_endpoint(
     Get detailed license specifications, coordinates, and technical details.
     Useful for developers and integration purposes.
     """
-    return get_license_specifications() 
+    return get_license_specifications()
+
+
+@router.post("/{license_id}/generate", response_model=Dict[str, Any])
+def generate_license_files(
+    *,
+    db: Session = Depends(get_db),
+    license_id: int,
+    background_tasks: BackgroundTasks,
+    force_regenerate: bool = False,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Generate complete license file package (front, back, PDFs) and store files
+    """
+    license = crud.license.get(db, id=license_id)
+    if not license:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="License not found",
+        )
+    
+    # Get related citizen
+    citizen = crud.citizen.get(db, id=license.citizen_id)
+    if not citizen:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Citizen not found",
+        )
+    
+    try:
+        # Prepare data for generation
+        license_data = {
+            "id": license.id,
+            "license_number": license.license_number,
+            "category": license.category.value,
+            "issue_date": license.issue_date,
+            "expiry_date": license.expiry_date,
+            "status": license.status.value,
+            "restrictions": license.restrictions,
+            "medical_conditions": license.medical_conditions,
+            "barcode_data": license.barcode_data,
+        }
+        
+        citizen_data = {
+            "id": citizen.id,
+            "id_number": citizen.id_number,
+            "first_name": citizen.first_name,
+            "last_name": citizen.last_name,
+            "middle_name": citizen.middle_name,
+            "date_of_birth": citizen.date_of_birth,
+            "gender": citizen.gender.value,
+            "address_line1": citizen.address_line1,
+            "address_line2": citizen.address_line2,
+            "city": citizen.city,
+            "postal_code": citizen.postal_code,
+            "photo_url": citizen.photo_url,
+            "processed_photo_path": citizen.processed_photo_path,
+        }
+        
+        # Generate complete license package
+        result = production_generator.generate_complete_license(
+            license_data, citizen_data, force_regenerate
+        )
+        
+        # Update database with file paths
+        crud.license.update_file_paths(db, license_id=license_id, file_paths=result)
+        
+        # Update citizen photo paths if they were processed
+        if "processed_photo_path" in result:
+            crud.citizen.update_photo_paths(
+                db, 
+                citizen_id=citizen.id,
+                processed_photo_path=result["processed_photo_path"]
+            )
+        
+        # Add cleanup task in background
+        background_tasks.add_task(file_manager.cleanup_temp_files, 1)  # Clean files older than 1 hour
+        
+        # Log action
+        crud.audit_log.create(
+            db,
+            obj_in={
+                "user_id": current_user.id,
+                "action_type": ActionType.CREATE,
+                "resource_type": ResourceType.LICENSE,
+                "resource_id": str(license.id),
+                "description": f"User {current_user.username} generated license files for {license.license_number}"
+            }
+        )
+        
+        return {
+            "message": "License files generated successfully",
+            "license_id": license_id,
+            "license_number": license.license_number,
+            "files": result,
+            "cached": result.get("from_cache", False)
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating license files: {str(e)}"
+        )
+
+
+@router.get("/{license_id}/files", response_model=Dict[str, Any])
+def get_license_files(
+    *,
+    db: Session = Depends(get_db),
+    license_id: int,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get information about generated license files
+    """
+    license = crud.license.get(db, id=license_id)
+    if not license:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="License not found",
+        )
+    
+    files_info = {}
+    
+    # Check which files exist and get their info
+    file_fields = [
+        "front_image_path", "back_image_path", 
+        "front_pdf_path", "back_pdf_path", "combined_pdf_path"
+    ]
+    
+    for field in file_fields:
+        path = getattr(license, field, None)
+        if path and file_manager.file_exists(path):
+            files_info[field] = {
+                "path": path,
+                "url": file_manager.get_file_url(path),
+                "size_bytes": file_manager.get_file_size(path),
+                "exists": True
+            }
+        else:
+            files_info[field] = {
+                "path": path,
+                "url": None,
+                "size_bytes": 0,
+                "exists": False
+            }
+    
+    return {
+        "license_id": license_id,
+        "license_number": license.license_number,
+        "last_generated": license.last_generated,
+        "generation_version": license.generation_version,
+        "files": files_info
+    }
+
+
+@router.get("/{license_id}/download/{file_type}")
+def download_license_file(
+    *,
+    db: Session = Depends(get_db),
+    license_id: int,
+    file_type: str,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Download a specific license file
+    """
+    license = crud.license.get(db, id=license_id)
+    if not license:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="License not found",
+        )
+    
+    # Map file types to database fields
+    file_mapping = {
+        "front_image": "front_image_path",
+        "back_image": "back_image_path",
+        "front_pdf": "front_pdf_path", 
+        "back_pdf": "back_pdf_path",
+        "combined_pdf": "combined_pdf_path"
+    }
+    
+    if file_type not in file_mapping:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file type. Supported types: {list(file_mapping.keys())}"
+        )
+    
+    file_path = getattr(license, file_mapping[file_type], None)
+    if not file_path or not file_manager.file_exists(file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File not found. Generate license files first."
+        )
+    
+    # Get full file path
+    full_path = file_manager.base_dir / file_path
+    
+    # Determine media type
+    media_type = "application/pdf" if file_type.endswith("_pdf") else "image/png"
+    
+    # Create filename for download
+    extension = "pdf" if file_type.endswith("_pdf") else "png"
+    filename = f"license_{license.license_number}_{file_type}.{extension}"
+    
+    # Log download
+    crud.audit_log.create(
+        db,
+        obj_in={
+            "user_id": current_user.id,
+            "action_type": ActionType.READ,
+            "resource_type": ResourceType.LICENSE,
+            "resource_id": str(license.id),
+            "description": f"User {current_user.username} downloaded {file_type} for license {license.license_number}"
+        }
+    )
+    
+    return FileResponse(
+        path=str(full_path),
+        media_type=media_type,
+        filename=filename
+    )
+
+
+@router.post("/{license_id}/photo/update", response_model=Dict[str, Any])
+def update_license_photo(
+    *,
+    db: Session = Depends(get_db),
+    license_id: int,
+    photo_url: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Update the photo for a license holder and reprocess
+    """
+    license = crud.license.get(db, id=license_id)
+    if not license:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="License not found",
+        )
+    
+    citizen = crud.citizen.get(db, id=license.citizen_id)
+    if not citizen:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Citizen not found",
+        )
+    
+    try:
+        # Update photo URL in database
+        crud.citizen.update(db, db_obj=citizen, obj_in={"photo_url": photo_url})
+        
+        # Process new photo
+        original_path, processed_path = production_generator.update_citizen_photo(
+            citizen.id, photo_url
+        )
+        
+        # Update citizen with new photo paths
+        crud.citizen.update_photo_paths(
+            db,
+            citizen_id=citizen.id,
+            stored_photo_path=original_path,
+            processed_photo_path=processed_path
+        )
+        
+        # Mark license for regeneration
+        crud.license.mark_for_regeneration(db, license_id=license_id)
+        
+        # Add background cleanup task
+        background_tasks.add_task(file_manager.cleanup_temp_files, 1)
+        
+        # Log action
+        crud.audit_log.create(
+            db,
+            obj_in={
+                "user_id": current_user.id,
+                "action_type": ActionType.UPDATE,
+                "resource_type": ResourceType.LICENSE,
+                "resource_id": str(license.id),
+                "description": f"User {current_user.username} updated photo for license {license.license_number}"
+            }
+        )
+        
+        return {
+            "message": "Photo updated successfully",
+            "license_id": license_id,
+            "citizen_id": citizen.id,
+            "original_photo_path": original_path,
+            "processed_photo_path": processed_path,
+            "regeneration_required": True
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating photo: {str(e)}"
+        )
+
+
+@router.get("/storage/stats", response_model=Dict[str, Any])
+def get_storage_statistics(
+    *,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get storage system statistics
+    """
+    try:
+        stats = file_manager.get_storage_stats()
+        
+        # Convert bytes to human readable format
+        def format_bytes(bytes_value):
+            for unit in ['B', 'KB', 'MB', 'GB']:
+                if bytes_value < 1024.0:
+                    return f"{bytes_value:.1f} {unit}"
+                bytes_value /= 1024.0
+            return f"{bytes_value:.1f} TB"
+        
+        formatted_stats = {
+            **stats,
+            "total_size_formatted": format_bytes(stats["total_size_bytes"]),
+            "license_size_formatted": format_bytes(stats["license_size_bytes"]),
+            "photo_size_formatted": format_bytes(stats["photo_size_bytes"]),
+            "temp_size_formatted": format_bytes(stats["temp_size_bytes"]),
+        }
+        
+        return formatted_stats
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting storage stats: {str(e)}"
+        )
+
+
+@router.post("/storage/cleanup", response_model=Dict[str, str])
+def cleanup_storage(
+    *,
+    background_tasks: BackgroundTasks,
+    older_than_hours: int = 24,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Trigger storage cleanup for temporary files
+    """
+    try:
+        # Add cleanup task to background
+        background_tasks.add_task(file_manager.cleanup_temp_files, older_than_hours)
+        
+        return {
+            "message": f"Storage cleanup initiated for files older than {older_than_hours} hours",
+            "status": "running"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error initiating cleanup: {str(e)}"
+        ) 

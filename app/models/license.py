@@ -44,6 +44,22 @@ class License(BaseModel):
     file_url = Column(String, nullable=True)
     barcode_data = Column(String, nullable=True)
     
+    # Generated license files storage
+    front_image_path = Column(String, nullable=True)
+    back_image_path = Column(String, nullable=True)
+    front_pdf_path = Column(String, nullable=True)
+    back_pdf_path = Column(String, nullable=True)
+    combined_pdf_path = Column(String, nullable=True)
+    
+    # Image processing tracking
+    original_photo_path = Column(String, nullable=True)
+    processed_photo_path = Column(String, nullable=True)
+    photo_last_updated = Column(DateTime, nullable=True)
+    
+    # Generation metadata
+    last_generated = Column(DateTime, nullable=True)
+    generation_version = Column(String, default="1.0", nullable=False)
+    
     # Relationships
     citizen = relationship("Citizen", back_populates="licenses")
     
