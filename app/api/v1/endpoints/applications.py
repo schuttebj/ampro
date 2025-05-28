@@ -33,7 +33,7 @@ def read_applications(
     Retrieve license applications with optional filtering.
     """
     from sqlalchemy import and_, or_, text
-    from app.models.license_application import LicenseApplication as LicenseApplicationModel
+    from app.models.license import LicenseApplication as LicenseApplicationModel
     from app.models.citizen import Citizen as CitizenModel
     
     query = db.query(LicenseApplicationModel)
