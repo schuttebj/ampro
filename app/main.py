@@ -27,16 +27,15 @@ app = FastAPI(
     redoc_url=f"{settings.API_V1_PREFIX}/redoc",
 )
 
-# Log CORS settings during startup
-logger.info(f"Configuring CORS with origins: {settings.BACKEND_CORS_ORIGINS}")
+# Force allow all origins for CORS
+logger.info("Configuring CORS to allow all origins")
 
 # Set all CORS enabled origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_origin_regex="https://.*\.vercel\.app",  # Also allow all Vercel domains
+    allow_origins=["*"],  # Force wildcard regardless of settings
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
     allow_headers=["*"],
     expose_headers=["Content-Type", "Authorization"],
     max_age=600,  # Cache preflight requests for 10 minutes
@@ -74,6 +73,14 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Error initializing storage: {str(e)}")
 
+# Add a HEAD method handler for the root endpoint
+@app.head("/")
+async def head_root():
+    """
+    HEAD method for root endpoint.
+    """
+    return {}
+
 @app.get("/")
 async def root():
     """
@@ -84,6 +91,14 @@ async def root():
         "status": "healthy",
         "version": "0.1.0",
     }
+
+# Add a HEAD method handler for the health endpoint
+@app.head("/health")
+async def head_health():
+    """
+    HEAD method for health endpoint.
+    """
+    return {}
 
 @app.get("/health")
 async def health_check():
@@ -103,6 +118,14 @@ async def auth_login_options():
     Handle OPTIONS requests for auth/login endpoint.
     """
     return {"detail": "OK"}
+
+# Add a HEAD handler for the auth/login endpoint
+@app.head("/api/v1/auth/login")
+async def auth_login_head():
+    """
+    Handle HEAD requests for auth/login endpoint.
+    """
+    return {}
 
 @app.get("/protected")
 async def protected_route(current_user = Depends(get_current_active_user)):
