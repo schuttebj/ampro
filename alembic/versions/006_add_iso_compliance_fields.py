@@ -1,7 +1,7 @@
 """Add ISO compliance fields to license table
 
 Revision ID: 006_add_iso_compliance_fields
-Revises: 005_fix_audit_enum_case
+Revises: 005
 Create Date: 2025-01-28 16:30:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '006_add_iso_compliance_fields'
-down_revision = '005_fix_audit_enum_case'
+down_revision = '005'
 branch_labels = None
 depends_on = None
 
