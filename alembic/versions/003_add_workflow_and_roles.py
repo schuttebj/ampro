@@ -1,4 +1,4 @@
-"""Add workflow tables for print jobs and shipping
+"""Add workflow tables and user roles
 
 Revision ID: 003
 Revises: 002
@@ -31,10 +31,19 @@ def upgrade():
     op.execute("ALTER TYPE licensestatus ADD VALUE IF NOT EXISTS 'pending_collection'")
     
     # Create PrintJobStatus enum
-    op.execute("CREATE TYPE printjobstatus AS ENUM ('queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled')")
+    op.execute("CREATE TYPE IF NOT EXISTS printjobstatus AS ENUM ('queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled')")
     
     # Create ShippingStatus enum
-    op.execute("CREATE TYPE shippingstatus AS ENUM ('pending', 'in_transit', 'delivered', 'failed')")
+    op.execute("CREATE TYPE IF NOT EXISTS shippingstatus AS ENUM ('pending', 'in_transit', 'delivered', 'failed')")
+    
+    # Create UserRole enum
+    op.execute("CREATE TYPE IF NOT EXISTS userrole AS ENUM ('admin', 'manager', 'officer', 'printer', 'viewer')")
+    
+    # Add role column to user table
+    op.add_column('user', sa.Column('role', postgresql.ENUM('admin', 'manager', 'officer', 'printer', 'viewer', name='userrole'), nullable=False, server_default='officer'))
+    
+    # Update existing superusers to admin role
+    op.execute("UPDATE \"user\" SET role = 'admin' WHERE is_superuser = true")
     
     # Add new columns to license table
     op.add_column('license', sa.Column('collection_point', sa.String(), nullable=True))
@@ -135,8 +144,12 @@ def downgrade():
     op.drop_column('license', 'collected_at')
     op.drop_column('license', 'collection_point')
     
+    # Remove role column
+    op.drop_column('user', 'role')
+    
     # Drop enums
-    op.execute("DROP TYPE shippingstatus")
-    op.execute("DROP TYPE printjobstatus")
+    op.execute("DROP TYPE IF EXISTS shippingstatus")
+    op.execute("DROP TYPE IF EXISTS printjobstatus")
+    op.execute("DROP TYPE IF EXISTS userrole")
     
     # Note: Cannot easily remove enum values in PostgreSQL, so we leave them 
