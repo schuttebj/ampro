@@ -30,14 +30,38 @@ def upgrade():
     # Update LicenseStatus enum to include new statuses
     op.execute("ALTER TYPE licensestatus ADD VALUE IF NOT EXISTS 'pending_collection'")
     
-    # Create PrintJobStatus enum
-    op.execute("CREATE TYPE IF NOT EXISTS printjobstatus AS ENUM ('queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled')")
+    # Create PrintJobStatus enum - check existence first
+    op.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'printjobstatus') THEN
+                CREATE TYPE printjobstatus AS ENUM ('queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled');
+            END IF;
+        END
+        $$;
+    """)
     
-    # Create ShippingStatus enum
-    op.execute("CREATE TYPE IF NOT EXISTS shippingstatus AS ENUM ('pending', 'in_transit', 'delivered', 'failed')")
+    # Create ShippingStatus enum - check existence first  
+    op.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'shippingstatus') THEN
+                CREATE TYPE shippingstatus AS ENUM ('pending', 'in_transit', 'delivered', 'failed');
+            END IF;
+        END
+        $$;
+    """)
     
-    # Create UserRole enum
-    op.execute("CREATE TYPE IF NOT EXISTS userrole AS ENUM ('admin', 'manager', 'officer', 'printer', 'viewer')")
+    # Create UserRole enum - check existence first
+    op.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userrole') THEN
+                CREATE TYPE userrole AS ENUM ('admin', 'manager', 'officer', 'printer', 'viewer');
+            END IF;
+        END
+        $$;
+    """)
     
     # Add role column to user table
     op.add_column('user', sa.Column('role', postgresql.ENUM('admin', 'manager', 'officer', 'printer', 'viewer', name='userrole'), nullable=False, server_default='officer'))
