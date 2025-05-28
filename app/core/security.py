@@ -43,6 +43,14 @@ def create_access_token(subject: Union[str, Any], expires_delta: Optional[timede
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
+def oauth2_scheme_optional(
+    authorization: Optional[str] = Header(None, include_in_schema=True)
+) -> Optional[str]:
+    """OAuth2 scheme that does not raise an exception when no authentication is provided."""
+    if authorization and authorization.startswith("Bearer "):
+        return authorization.replace("Bearer ", "")
+    return None
+
 async def get_current_user(
     db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)
 ) -> User:
@@ -156,12 +164,4 @@ async def get_current_user_optional(
     try:
         return await get_current_user(db=db, token=token)
     except HTTPException:
-        return None
-
-def oauth2_scheme_optional(
-    authorization: Optional[str] = Header(None, include_in_schema=True)
-) -> Optional[str]:
-    """OAuth2 scheme that does not raise an exception when no authentication is provided."""
-    if authorization and authorization.startswith("Bearer "):
-        return authorization.replace("Bearer ", "")
-    return None 
+        return None 
