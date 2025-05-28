@@ -132,7 +132,7 @@ def search_citizens(
 ) -> Any:
     """
     Search citizens by ID number or name. By default only searches active citizens.
-    Supports partial matches for both ID numbers and names.
+    Uses more precise matching logic.
     """
     from app.models.citizen import Citizen as CitizenModel
     
@@ -142,7 +142,7 @@ def search_citizens(
             detail="Only admin users can search inactive citizens",
         )
     
-    # Build query
+    # Build base query
     query = db.query(CitizenModel)
     
     # Filter by active status if needed
@@ -151,21 +151,46 @@ def search_citizens(
     
     search_conditions = []
     
-    # Search by ID number (partial match)
+    # Search by ID number (exact match or prefix for South African ID format)
     if id_number:
-        search_conditions.append(CitizenModel.id_number.ilike(f"%{id_number}%"))
+        # For ID numbers, be more precise - exact match or starts with
+        search_conditions.append(
+            or_(
+                CitizenModel.id_number == id_number,  # Exact match
+                CitizenModel.id_number.ilike(f"{id_number}%")  # Starts with
+            )
+        )
     
-    # Search by name (partial matches)
+    # Search by name - only if we have both first and last name, use AND logic
+    name_conditions = []
     if first_name:
-        search_conditions.append(CitizenModel.first_name.ilike(f"%{first_name}%"))
+        name_conditions.append(CitizenModel.first_name.ilike(f"%{first_name}%"))
     
     if last_name:
-        search_conditions.append(CitizenModel.last_name.ilike(f"%{last_name}%"))
+        name_conditions.append(CitizenModel.last_name.ilike(f"%{last_name}%"))
     
-    # If we have search conditions, apply them
+    # If we have both first and last name, use AND (more precise)
+    # If we have only one, use OR (less precise but acceptable for single terms)
+    if len(name_conditions) >= 2:
+        # Both first and last name provided - use AND for precision
+        search_conditions.append(and_(*name_conditions))
+    elif len(name_conditions) == 1:
+        # Only one name field provided - add it directly
+        search_conditions.extend(name_conditions)
+    
+    # Apply search conditions
     if search_conditions:
+        # Use OR between ID search and name search, but AND within name search
         query = query.filter(or_(*search_conditions))
-        results = query.offset(skip).limit(limit).all()
+        
+        try:
+            results = query.offset(skip).limit(limit).all()
+        except Exception as e:
+            # Handle database errors gracefully
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database error during search: {str(e)}"
+            )
     else:
         results = []
     
@@ -173,15 +198,20 @@ def search_citizens(
     search_terms = ", ".join(
         [f"{k}: {v}" for k, v in {"id_number": id_number, "first_name": first_name, "last_name": last_name}.items() if v]
     )
-    crud.audit_log.create(
-        db,
-        obj_in={
-            "user_id": current_user.id,
-            "action_type": ActionType.READ,
-            "resource_type": ResourceType.CITIZEN,
-            "description": f"User {current_user.username} searched {'all' if include_inactive else 'active'} citizens by {search_terms}, found {len(results)} results"
-        }
-    )
+    
+    try:
+        crud.audit_log.create(
+            db,
+            obj_in={
+                "user_id": current_user.id,
+                "action_type": ActionType.READ,
+                "resource_type": ResourceType.CITIZEN,
+                "description": f"User {current_user.username} searched {'all' if include_inactive else 'active'} citizens by {search_terms}, found {len(results)} results"
+            }
+        )
+    except Exception as e:
+        # Don't fail the search if audit logging fails
+        pass
     
     return results
 
