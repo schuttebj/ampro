@@ -7,24 +7,24 @@ from app.models.base import BaseModel
 
 
 class ActionType(str, enum.Enum):
-    CREATE = "create"
-    READ = "read"
-    UPDATE = "update"
-    DELETE = "delete"
-    LOGIN = "login"
-    LOGOUT = "logout"
-    PRINT = "print"
-    EXPORT = "export"
-    VERIFY = "verify"
+    CREATE = "CREATE"
+    READ = "READ"
+    UPDATE = "UPDATE"
+    DELETE = "DELETE"
+    LOGIN = "LOGIN"
+    LOGOUT = "LOGOUT"
+    PRINT = "PRINT"
+    EXPORT = "EXPORT"
+    VERIFY = "VERIFY"
 
 
 class ResourceType(str, enum.Enum):
-    USER = "user"
-    CITIZEN = "citizen"
-    LICENSE = "license"
-    APPLICATION = "application"
-    FILE = "file"
-    SYSTEM = "system"
+    USER = "USER"
+    CITIZEN = "CITIZEN"
+    LICENSE = "LICENSE"
+    APPLICATION = "APPLICATION"
+    FILE = "FILE"
+    SYSTEM = "SYSTEM"
 
 
 class AuditLog(BaseModel):
