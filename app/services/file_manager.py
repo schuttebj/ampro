@@ -174,11 +174,22 @@ class FileManager:
                         content = f.read()
                 else:
                     raise ValueError(f"Local file not found: {relative_path}")
-            else:
+            elif photo_url.startswith(('http://', 'https://')):
                 # Download from external URL
                 response = requests.get(photo_url, timeout=30)
                 response.raise_for_status()
                 content = response.content
+            else:
+                # Assume it's a relative path to a local file
+                # This handles cases like "photos/filename.png"
+                full_path = self.base_dir / photo_url
+                
+                if full_path.exists():
+                    # Read existing file content
+                    with open(full_path, 'rb') as f:
+                        content = f.read()
+                else:
+                    raise ValueError(f"Local file not found: {photo_url}")
             
             # Generate filename based on content hash
             content_hash = self._generate_file_hash(content)
