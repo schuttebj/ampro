@@ -6,7 +6,7 @@ import requests
 from typing import Dict, Any, Optional, Tuple
 from datetime import date, datetime
 import qrcode
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 import pdf417gen
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
@@ -396,7 +396,7 @@ class SALicenseGenerator:
         return self._create_security_background(width, height)
     
     def _create_watermark_pattern(self, width: int, height: int, text: str = "SOUTH AFRICA") -> Image.Image:
-        """Create diagonal watermark pattern"""
+        """Create diagonal watermark pattern with proper transparency"""
         # Try to load watermark from file first
         watermark_path = os.path.join(self.assets_path, "overlays", "watermark_pattern.png")
         if os.path.exists(watermark_path):
@@ -405,15 +405,21 @@ class SALicenseGenerator:
                 # Resize to exact dimensions if needed
                 if watermark.size != (width, height):
                     watermark = watermark.resize((width, height), Image.Resampling.LANCZOS)
+                print(f"Loaded watermark from file: {watermark_path}")
                 return watermark
             except Exception as e:
                 print(f"Warning: Could not load watermark overlay: {e}")
         
-        # Fallback: Create programmatic watermark
-        watermark = Image.new('RGBA', (width * 2, height * 2), (255, 255, 255, 0))
+        # Fallback: Create programmatic watermark with better design
+        print(f"Creating programmatic watermark: {width}x{height}")
+        
+        # Create a larger canvas for better pattern distribution
+        pattern_width = width * 2
+        pattern_height = height * 2
+        watermark = Image.new('RGBA', (pattern_width, pattern_height), (255, 255, 255, 0))
         draw = ImageDraw.Draw(watermark)
         
-        # Use title font for watermark
+        # Use title font for watermark with good size
         font = self.fonts["title"]
         
         # Calculate text dimensions
@@ -421,73 +427,147 @@ class SALicenseGenerator:
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         
-        # Create diagonal pattern
-        for y in range(-text_height, height * 2 + text_height, text_height * 4):
-            for x in range(-text_width, width * 2 + text_width, text_width * 3):
-                # Alternate between normal and rotated text
-                if (x // (text_width * 3) + y // (text_height * 4)) % 2 == 0:
-                    draw.text((x, y), text, fill=COLORS["watermark"], font=font)
-                else:
-                    # Create rotated text
-                    temp_img = Image.new('RGBA', (text_width + 40, text_height + 40), (255, 255, 255, 0))
-                    temp_draw = ImageDraw.Draw(temp_img)
-                    temp_draw.text((20, 20), text, fill=COLORS["watermark"], font=font)
-                    rotated = temp_img.rotate(15, expand=1)
-                    watermark.paste(rotated, (x, y), rotated)
+        print(f"Watermark text '{text}' dimensions: {text_width}x{text_height}")
         
-        # Crop to original size
-        return watermark.crop((0, 0, width, height))
+        # Create diagonal pattern with proper spacing
+        spacing_x = text_width + 60  # More space between horizontal repetitions
+        spacing_y = text_height + 40  # More space between vertical repetitions
+        
+        # Light gray color with transparency for subtle watermark
+        watermark_color = (180, 180, 180, 60)  # Light gray with alpha
+        
+        for y in range(-text_height, pattern_height + text_height, spacing_y):
+            for x in range(-text_width, pattern_width + text_width, spacing_x):
+                # Create two different rotation angles for variety
+                if (x // spacing_x + y // spacing_y) % 3 == 0:
+                    # Normal text (no rotation)
+                    draw.text((x, y), text, fill=watermark_color, font=font)
+                elif (x // spacing_x + y // spacing_y) % 3 == 1:
+                    # Rotated text 15 degrees
+                    temp_img = Image.new('RGBA', (text_width + 50, text_height + 50), (255, 255, 255, 0))
+                    temp_draw = ImageDraw.Draw(temp_img)
+                    temp_draw.text((25, 25), text, fill=watermark_color, font=font)
+                    rotated = temp_img.rotate(15, expand=1)
+                    watermark.paste(rotated, (x - 15, y - 15), rotated)
+                else:
+                    # Rotated text -15 degrees
+                    temp_img = Image.new('RGBA', (text_width + 50, text_height + 50), (255, 255, 255, 0))
+                    temp_draw = ImageDraw.Draw(temp_img)
+                    temp_draw.text((25, 25), text, fill=watermark_color, font=font)
+                    rotated = temp_img.rotate(-15, expand=1)
+                    watermark.paste(rotated, (x - 15, y - 15), rotated)
+        
+        # Crop to original size and return
+        final_watermark = watermark.crop((0, 0, width, height))
+        print(f"Created watermark pattern: {final_watermark.size}, mode: {final_watermark.mode}")
+        return final_watermark
     
     def _process_photo_data(self, photo_data: str) -> Optional[Image.Image]:
         """Process photo data from either URL or base64 string"""
         if not photo_data:
+            print("Warning: No photo data provided")
             return None
         
         try:
+            photo = None
+            
             # Check if it's base64 data (starts with data: or is pure base64)
             if photo_data.startswith('data:'):
                 # Handle data URL format: data:image/jpeg;base64,/9j/4AAQ...
                 if ';base64,' in photo_data:
                     base64_data = photo_data.split(';base64,')[1]
+                    print(f"Processing data URL photo (length: {len(base64_data)})")
                 else:
                     # Fallback if format is unexpected
                     base64_data = photo_data.split(',')[1] if ',' in photo_data else photo_data
-            elif photo_data.startswith(('http://', 'https://')):
-                # Handle URL - download the image
-                response = requests.get(photo_data, timeout=10)
-                response.raise_for_status()
-                photo = Image.open(io.BytesIO(response.content))
-            else:
-                # Assume it's pure base64 data
-                base64_data = photo_data
-            
-            # If we have base64 data, decode it
-            if 'base64_data' in locals():
+                    print(f"Processing fallback data URL photo (length: {len(base64_data)})")
+                
                 # Decode base64 to bytes
                 image_bytes = base64.b64decode(base64_data)
                 photo = Image.open(io.BytesIO(image_bytes))
+                print(f"Successfully loaded photo from data URL: {photo.size}, mode: {photo.mode}")
+                
+            elif photo_data.startswith(('http://', 'https://')):
+                # Handle URL - download the image
+                print(f"Downloading photo from URL: {photo_data}")
+                response = requests.get(photo_data, timeout=10)
+                response.raise_for_status()
+                photo = Image.open(io.BytesIO(response.content))
+                print(f"Successfully downloaded photo: {photo.size}, mode: {photo.mode}")
+                
+            else:
+                # Assume it's pure base64 data
+                print(f"Processing pure base64 photo (length: {len(photo_data)})")
+                try:
+                    # Try to decode as base64
+                    image_bytes = base64.b64decode(photo_data)
+                    photo = Image.open(io.BytesIO(image_bytes))
+                    print(f"Successfully loaded photo from base64: {photo.size}, mode: {photo.mode}")
+                except Exception as decode_error:
+                    print(f"Failed to decode as base64: {decode_error}")
+                    return None
+            
+            if photo is None:
+                print("Error: Photo could not be loaded")
+                return None
             
             # Convert to RGB if necessary
-            if photo.mode != 'RGB':
+            original_mode = photo.mode
+            if photo.mode not in ['RGB', 'RGBA']:
                 photo = photo.convert('RGB')
+                print(f"Converted photo from {original_mode} to RGB")
             
             # Calculate exact photo dimensions (18 × 22 mm at 300 DPI)
             photo_w = int(18 * MM_TO_INCH * DPI)  # 213 px
             photo_h = int(22 * MM_TO_INCH * DPI)  # 260 px
             
-            # Resize maintaining aspect ratio
-            photo.thumbnail((photo_w, photo_h), Image.Resampling.LANCZOS)
+            print(f"Target photo dimensions: {photo_w}x{photo_h} pixels")
+            print(f"Original photo dimensions: {photo.size}")
             
-            # Create final photo with exact dimensions
+            # Calculate resize ratio to fit within target dimensions
+            ratio = min(photo_w / photo.width, photo_h / photo.height)
+            new_width = int(photo.width * ratio)
+            new_height = int(photo.height * ratio)
+            
+            # Resize maintaining aspect ratio
+            photo_resized = photo.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            print(f"Resized photo to: {photo_resized.size}")
+            
+            # Create final photo with exact dimensions and center the image
             final_photo = Image.new('RGB', (photo_w, photo_h), COLORS["white"])
-            paste_x = (photo_w - photo.width) // 2
-            paste_y = (photo_h - photo.height) // 2
-            final_photo.paste(photo, (paste_x, paste_y))
+            paste_x = (photo_w - photo_resized.width) // 2
+            paste_y = (photo_h - photo_resized.height) // 2
+            
+            # Handle RGBA photos
+            if photo_resized.mode == 'RGBA':
+                final_photo.paste(photo_resized, (paste_x, paste_y), photo_resized)
+            else:
+                final_photo.paste(photo_resized, (paste_x, paste_y))
+            
+            print(f"Final photo created: {final_photo.size}, centered at ({paste_x}, {paste_y})")
+            
+            # Apply basic image enhancements
+            try:
+                # Slight contrast enhancement
+                enhancer = ImageEnhance.Contrast(final_photo)
+                final_photo = enhancer.enhance(1.1)
+                
+                # Slight sharpness enhancement
+                enhancer = ImageEnhance.Sharpness(final_photo)
+                final_photo = enhancer.enhance(1.1)
+                
+                print("Applied photo enhancements (contrast and sharpness)")
+            except Exception as enhance_error:
+                print(f"Warning: Could not apply photo enhancements: {enhance_error}")
             
             return final_photo
             
         except Exception as e:
             print(f"Error processing photo data: {e}")
+            print(f"Photo data type: {type(photo_data)}")
+            if isinstance(photo_data, str):
+                print(f"Photo data length: {len(photo_data)}")
+                print(f"Photo data starts with: {photo_data[:50] if len(photo_data) > 50 else photo_data}")
             return None
     
     def _generate_pdf417_barcode(self, data: str) -> Image.Image:
@@ -534,10 +614,10 @@ class SALicenseGenerator:
             photo_resized = photo.resize((photo_pos[2], photo_pos[3]), Image.Resampling.LANCZOS)
             license_img.paste(photo_resized, (photo_pos[0], photo_pos[1]))
         else:
-            # Photo placeholder (no border)
+            # Photo placeholder with border
             draw.rectangle([photo_pos[0], photo_pos[1], 
                           photo_pos[0] + photo_pos[2], photo_pos[1] + photo_pos[3]], 
-                         fill=(240, 240, 240))
+                         fill=(240, 240, 240), outline=(180, 180, 180), width=2)
             photo_center_x = photo_pos[0] + photo_pos[2] // 2
             photo_center_y = photo_pos[1] + photo_pos[3] // 2
             draw.text((photo_center_x, photo_center_y), "PHOTO", 
@@ -577,8 +657,15 @@ class SALicenseGenerator:
             
             current_y += line_height
         
-        # Convert to base64 (no watermark overlay)
+        # Convert to base64 (no watermark overlay - watermark will be separate file)
         buffer = io.BytesIO()
+        # Convert back to RGB if needed for compatibility
+        if license_img.mode == 'RGBA':
+            # Create white background and paste RGBA image on it
+            rgb_img = Image.new('RGB', license_img.size, (255, 255, 255))
+            rgb_img.paste(license_img, mask=license_img.split()[-1] if len(license_img.split()) == 4 else None)
+            license_img = rgb_img
+        
         license_img.save(buffer, format="PNG", dpi=(DPI, DPI))
         return base64.b64encode(buffer.getvalue()).decode('utf-8')
     
@@ -627,8 +714,15 @@ class SALicenseGenerator:
         draw.text((fp_center_x, fp_coords[1] + fp_coords[3] + 10), "RIGHT THUMB", 
                  fill=COLORS["black"], font=self.fonts["tiny"], anchor="mm")
         
-        # Convert to base64 (no watermark overlay)
+        # Convert to base64 (no watermark overlay - watermark will be separate file)
         buffer = io.BytesIO()
+        # Convert back to RGB if needed for compatibility
+        if license_img.mode == 'RGBA':
+            # Create white background and paste RGBA image on it
+            rgb_img = Image.new('RGB', license_img.size, (255, 255, 255))
+            rgb_img.paste(license_img, mask=license_img.split()[-1] if len(license_img.split()) == 4 else None)
+            license_img = rgb_img
+            
         license_img.save(buffer, format="PNG", dpi=(DPI, DPI))
         return base64.b64encode(buffer.getvalue()).decode('utf-8')
     

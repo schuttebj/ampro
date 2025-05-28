@@ -72,6 +72,7 @@ class License(BaseModel):
     # Generated license files storage
     front_image_path = Column(String, nullable=True)
     back_image_path = Column(String, nullable=True)
+    watermark_image_path = Column(String, nullable=True)
     front_pdf_path = Column(String, nullable=True)
     back_pdf_path = Column(String, nullable=True)
     combined_pdf_path = Column(String, nullable=True)

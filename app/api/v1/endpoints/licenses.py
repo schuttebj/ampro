@@ -847,8 +847,8 @@ def get_license_files(
     
     # Check which files exist and get their info
     file_fields = [
-        "front_image_path", "back_image_path", 
-        "front_pdf_path", "back_pdf_path", "combined_pdf_path"
+        "front_image_path", "back_image_path", "watermark_image_path",
+        "front_pdf_path", "back_pdf_path", "watermark_pdf_path", "combined_pdf_path"
     ]
     
     for field in file_fields:
@@ -899,8 +899,10 @@ def download_license_file(
     file_mapping = {
         "front_image": "front_image_path",
         "back_image": "back_image_path",
+        "watermark_image": "watermark_image_path",
         "front_pdf": "front_pdf_path", 
         "back_pdf": "back_pdf_path",
+        "watermark_pdf": "watermark_pdf_path",
         "combined_pdf": "combined_pdf_path"
     }
     

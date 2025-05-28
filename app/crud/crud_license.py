@@ -87,8 +87,10 @@ class CRUDLicense(CRUDBase[License, LicenseCreate, LicenseUpdate]):
         path_mapping = {
             "front_image_path": "front_image_path",
             "back_image_path": "back_image_path", 
+            "watermark_image_path": "watermark_image_path",
             "front_pdf_path": "front_pdf_path",
             "back_pdf_path": "back_pdf_path",
+            "watermark_pdf_path": "watermark_pdf_path",
             "combined_pdf_path": "combined_pdf_path",
             "processed_photo_path": "processed_photo_path"
         }

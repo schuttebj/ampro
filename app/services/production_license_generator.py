@@ -34,7 +34,7 @@ class ProductionLicenseGenerator:
                                 citizen_data: Dict[str, Any], 
                                 force_regenerate: bool = False) -> Dict[str, str]:
         """
-        Generate complete license package (front, back, combined PDF) and store files
+        Generate complete license package (front, back, combined PDF with watermark) and store files
         
         Args:
             license_data: License information
@@ -62,6 +62,9 @@ class ProductionLicenseGenerator:
             front_image = self._generate_front_image(license_data, citizen_data, processed_photo_path)
             back_image = self._generate_back_image(license_data, citizen_data)
             
+            # Generate watermark as separate image
+            watermark_image = self._generate_watermark_image(license_data)
+            
             # Save image files
             front_path = file_manager.save_license_file(
                 license_id, "front", front_image, "png"
@@ -69,11 +72,15 @@ class ProductionLicenseGenerator:
             back_path = file_manager.save_license_file(
                 license_id, "back", back_image, "png"
             )
+            watermark_path = file_manager.save_license_file(
+                license_id, "watermark", watermark_image, "png"
+            )
             
             # Generate PDFs
             front_pdf = self._generate_pdf(front_image, f"License {license_data['license_number']} - Front")
             back_pdf = self._generate_pdf(back_image, f"License {license_data['license_number']} - Back")
-            combined_pdf = self._generate_combined_pdf(front_image, back_image, license_data)
+            watermark_pdf = self._generate_pdf(watermark_image, f"License {license_data['license_number']} - Watermark")
+            combined_pdf = self._generate_combined_pdf_with_watermark(front_image, back_image, watermark_image, license_data)
             
             # Save PDF files
             front_pdf_path = file_manager.save_license_file(
@@ -81,6 +88,9 @@ class ProductionLicenseGenerator:
             )
             back_pdf_path = file_manager.save_license_file(
                 license_id, "back", back_pdf, "pdf"
+            )
+            watermark_pdf_path = file_manager.save_license_file(
+                license_id, "watermark", watermark_pdf, "pdf"
             )
             combined_pdf_path = file_manager.save_license_file(
                 license_id, "combined", combined_pdf, "pdf"
@@ -90,13 +100,17 @@ class ProductionLicenseGenerator:
             result = {
                 "front_image_path": front_path,
                 "back_image_path": back_path,
+                "watermark_image_path": watermark_path,
                 "front_pdf_path": front_pdf_path,
                 "back_pdf_path": back_pdf_path,
+                "watermark_pdf_path": watermark_pdf_path,
                 "combined_pdf_path": combined_pdf_path,
                 "front_image_url": file_manager.get_file_url(front_path),
                 "back_image_url": file_manager.get_file_url(back_path),
+                "watermark_image_url": file_manager.get_file_url(watermark_path),
                 "front_pdf_url": file_manager.get_file_url(front_pdf_path),
                 "back_pdf_url": file_manager.get_file_url(back_pdf_path),
+                "watermark_pdf_url": file_manager.get_file_url(watermark_pdf_path),
                 "combined_pdf_url": file_manager.get_file_url(combined_pdf_path),
                 "processed_photo_path": processed_photo_path,
                 "processed_photo_url": file_manager.get_file_url(processed_photo_path),
@@ -217,22 +231,83 @@ class ProductionLicenseGenerator:
     def _generate_front_image(self, license_data: Dict[str, Any], 
                             citizen_data: Dict[str, Any], 
                             photo_path: str) -> bytes:
-        """Generate front side image"""
-        # Read processed photo
-        photo_content = file_manager.get_file_content(photo_path)
-        photo_base64 = base64.b64encode(photo_content).decode('utf-8')
-        
-        # Generate using SA generator
-        front_image_base64 = self.sa_generator.generate_front(license_data, photo_base64)
-        
-        # Convert back to bytes
-        return base64.b64decode(front_image_base64)
+        """Generate front side image with improved photo handling"""
+        try:
+            photo_base64 = None
+            
+            if photo_path and file_manager.file_exists(photo_path):
+                # Read processed photo
+                logger.info(f"Reading photo from path: {photo_path}")
+                photo_content = file_manager.get_file_content(photo_path)
+                
+                if photo_content:
+                    photo_base64 = base64.b64encode(photo_content).decode('utf-8')
+                    logger.info(f"Successfully converted photo to base64 (length: {len(photo_base64)})")
+                else:
+                    logger.warning(f"Photo file at {photo_path} is empty or could not be read")
+            else:
+                logger.warning(f"Photo path {photo_path} does not exist or is invalid")
+            
+            # Generate using SA generator (will handle missing photo gracefully)
+            logger.info("Generating front license image with SA generator")
+            front_image_base64 = self.sa_generator.generate_front(license_data, photo_base64)
+            
+            if not front_image_base64:
+                raise ValueError("SA generator returned empty image")
+            
+            logger.info(f"Successfully generated front image (base64 length: {len(front_image_base64)})")
+            
+            # Convert back to bytes
+            image_bytes = base64.b64decode(front_image_base64)
+            logger.info(f"Converted to bytes (length: {len(image_bytes)})")
+            
+            return image_bytes
+            
+        except Exception as e:
+            logger.error(f"Error generating front image: {str(e)}")
+            # Create a simple error image as fallback
+            from PIL import Image, ImageDraw, ImageFont
+            
+            error_img = Image.new('RGB', (CARD_W_PX, CARD_H_PX), (255, 255, 255))
+            draw = ImageDraw.Draw(error_img)
+            draw.text((CARD_W_PX//2, CARD_H_PX//2), "ERROR GENERATING\nLICENSE IMAGE", 
+                     fill=(255, 0, 0), anchor="mm")
+            
+            buffer = io.BytesIO()
+            error_img.save(buffer, format="PNG")
+            return buffer.getvalue()
     
     def _generate_back_image(self, license_data: Dict[str, Any], 
                            citizen_data: Dict[str, Any]) -> bytes:
-        """Generate back side image"""
-        back_image_base64 = self.sa_generator.generate_back(license_data)
-        return base64.b64decode(back_image_base64)
+        """Generate back side image with improved error handling"""
+        try:
+            logger.info("Generating back license image with SA generator")
+            back_image_base64 = self.sa_generator.generate_back(license_data)
+            
+            if not back_image_base64:
+                raise ValueError("SA generator returned empty back image")
+            
+            logger.info(f"Successfully generated back image (base64 length: {len(back_image_base64)})")
+            
+            # Convert back to bytes
+            image_bytes = base64.b64decode(back_image_base64)
+            logger.info(f"Converted back image to bytes (length: {len(image_bytes)})")
+            
+            return image_bytes
+            
+        except Exception as e:
+            logger.error(f"Error generating back image: {str(e)}")
+            # Create a simple error image as fallback
+            from PIL import Image, ImageDraw
+            
+            error_img = Image.new('RGB', (CARD_W_PX, CARD_H_PX), (255, 255, 255))
+            draw = ImageDraw.Draw(error_img)
+            draw.text((CARD_W_PX//2, CARD_H_PX//2), "ERROR GENERATING\nBACK IMAGE", 
+                     fill=(255, 0, 0), anchor="mm")
+            
+            buffer = io.BytesIO()
+            error_img.save(buffer, format="PNG")
+            return buffer.getvalue()
     
     def _generate_pdf(self, image_bytes: bytes, title: str) -> bytes:
         """
@@ -280,14 +355,15 @@ class ProductionLicenseGenerator:
         
         return pdf_buffer.getvalue()
     
-    def _generate_combined_pdf(self, front_bytes: bytes, back_bytes: bytes, 
-                              license_data: Dict[str, Any]) -> bytes:
+    def _generate_combined_pdf_with_watermark(self, front_bytes: bytes, back_bytes: bytes, 
+                                              watermark_bytes: bytes, license_data: Dict[str, Any]) -> bytes:
         """
-        Generate combined PDF with both front and back
+        Generate combined PDF with both front and back and watermark
         
         Args:
             front_bytes: Front image bytes
             back_bytes: Back image bytes
+            watermark_bytes: Watermark image bytes
             license_data: License information
         
         Returns:
@@ -310,12 +386,16 @@ class ProductionLicenseGenerator:
         # Create temporary files for the images
         front_temp_path = file_manager._get_file_path("temp", f"temp_front_{uuid.uuid4()}.png")
         back_temp_path = file_manager._get_file_path("temp", f"temp_back_{uuid.uuid4()}.png")
+        watermark_temp_path = file_manager._get_file_path("temp", f"temp_watermark_{uuid.uuid4()}.png")
         
         with open(front_temp_path, 'wb') as f:
             f.write(front_bytes)
             
         with open(back_temp_path, 'wb') as f:
             f.write(back_bytes)
+            
+        with open(watermark_temp_path, 'wb') as f:
+            f.write(watermark_bytes)
         
         # Front page using file path
         c.drawImage(
@@ -331,6 +411,14 @@ class ProductionLicenseGenerator:
             width=page_width, height=page_height,
             preserveAspectRatio=True
         )
+        c.showPage()
+        
+        # Watermark page using file path
+        c.drawImage(
+            str(watermark_temp_path), 0, 0,
+            width=page_width, height=page_height,
+            preserveAspectRatio=True
+        )
         
         c.save()
         
@@ -339,16 +427,59 @@ class ProductionLicenseGenerator:
             import os
             os.unlink(front_temp_path)
             os.unlink(back_temp_path)
+            os.unlink(watermark_temp_path)
         except Exception as e:
             logger.warning(f"Failed to delete temporary files: {str(e)}")
         
         return pdf_buffer.getvalue()
+    
+    def _generate_watermark_image(self, license_data: Dict[str, Any]) -> bytes:
+        """Generate watermark image as separate file"""
+        try:
+            logger.info("Generating watermark image with SA generator")
+            watermark_base64 = self.sa_generator.generate_watermark_template(CARD_W_PX, CARD_H_PX, "SOUTH AFRICA")
+            
+            if not watermark_base64:
+                raise ValueError("SA generator returned empty watermark image")
+            
+            logger.info(f"Successfully generated watermark image (base64 length: {len(watermark_base64)})")
+            
+            # Convert back to bytes
+            image_bytes = base64.b64decode(watermark_base64)
+            logger.info(f"Converted watermark image to bytes (length: {len(image_bytes)})")
+            
+            return image_bytes
+            
+        except Exception as e:
+            logger.error(f"Error generating watermark image: {str(e)}")
+            # Create a simple fallback watermark image
+            from PIL import Image, ImageDraw
+            
+            watermark_img = Image.new('RGB', (CARD_W_PX, CARD_H_PX), (255, 255, 255))
+            draw = ImageDraw.Draw(watermark_img)
+            
+            # Simple diagonal text pattern
+            text = "SOUTH AFRICA"
+            try:
+                font = ImageFont.truetype("arial.ttf", 36)
+            except:
+                font = ImageFont.load_default()
+            
+            # Draw diagonal pattern
+            for y in range(0, CARD_H_PX, 100):
+                for x in range(0, CARD_W_PX, 200):
+                    draw.text((x, y), text, fill=(200, 200, 200), font=font)
+            
+            buffer = io.BytesIO()
+            watermark_img.save(buffer, format="PNG")
+            return buffer.getvalue()
     
     def _files_exist(self, license_id: int) -> bool:
         """Check if all license files exist"""
         required_files = [
             f"licenses/license_{license_id}_front.png",
             f"licenses/license_{license_id}_back.png",
+            f"licenses/license_{license_id}_watermark.png",
             f"licenses/license_{license_id}_combined.pdf"
         ]
         
@@ -359,8 +490,10 @@ class ProductionLicenseGenerator:
         paths = {
             "front_image_path": f"licenses/license_{license_id}_front.png",
             "back_image_path": f"licenses/license_{license_id}_back.png",
+            "watermark_image_path": f"licenses/license_{license_id}_watermark.png",
             "front_pdf_path": f"licenses/license_{license_id}_front.pdf",
             "back_pdf_path": f"licenses/license_{license_id}_back.pdf",
+            "watermark_pdf_path": f"licenses/license_{license_id}_watermark.pdf",
             "combined_pdf_path": f"licenses/license_{license_id}_combined.pdf",
         }
         
