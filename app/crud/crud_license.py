@@ -31,6 +31,18 @@ class CRUDLicense(CRUDBase[License, LicenseCreate, LicenseUpdate]):
         """
         return db.query(License).filter(License.status == status).offset(skip).limit(limit).all()
     
+    def get_multi_active(self, db: Session, *, skip: int = 0, limit: int = 100) -> List[License]:
+        """
+        Get all active licenses (not soft-deleted).
+        """
+        return (
+            db.query(self.model)
+            .filter(License.is_active == True)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    
     def get_expired_licenses(self, db: Session, *, cutoff_date: date = date.today(), skip: int = 0, limit: int = 100) -> List[License]:
         """
         Get all licenses that are expired as of the cutoff date.

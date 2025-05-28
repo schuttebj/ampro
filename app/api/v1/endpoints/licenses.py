@@ -34,12 +34,23 @@ def read_licenses(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
+    include_inactive: bool = False,
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Retrieve licenses.
+    Retrieve licenses. By default only returns active licenses.
     """
-    licenses = crud.license.get_multi(db, skip=skip, limit=limit)
+    if include_inactive and not (current_user.is_superuser or getattr(current_user, 'is_admin', False)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can view inactive licenses",
+        )
+    
+    if include_inactive:
+        licenses = crud.license.get_multi(db, skip=skip, limit=limit)
+    else:
+        # Filter to only active licenses (not soft-deleted)
+        licenses = crud.license.get_multi_active(db, skip=skip, limit=limit)
     
     # Log action
     crud.audit_log.create(
@@ -530,19 +541,25 @@ def get_sa_license_front_preview(
             detail="Citizen not found",
         )
     
-    # Prepare license data
+    # Prepare license data with all required fields including citizen information
     license_data = {
+        "id": license.id,
         "license_number": license.license_number,
         "category": license.category.value,
-        "issue_date": license.issue_date,
-        "expiry_date": license.expiry_date,
+        "issue_date": license.issue_date.isoformat() if license.issue_date else None,
+        "expiry_date": license.expiry_date.isoformat() if license.expiry_date else None,
         "status": license.status.value,
+        "restrictions": license.restrictions,
+        "medical_conditions": license.medical_conditions,
+        "iso_country_code": getattr(license, 'iso_country_code', 'ZAF'),
+        "iso_issuing_authority": getattr(license, 'iso_issuing_authority', 'Department of Transport'),
+        # Merge citizen fields that the SA generator expects
         "id_number": citizen.id_number,
         "first_name": citizen.first_name,
         "last_name": citizen.last_name,
-        "date_of_birth": citizen.date_of_birth,
-        "restrictions": license.restrictions,
-        "medical_conditions": license.medical_conditions,
+        "middle_name": getattr(citizen, 'middle_name', ''),
+        "date_of_birth": citizen.date_of_birth.isoformat() if citizen.date_of_birth else None,
+        "gender": citizen.gender.value if hasattr(citizen.gender, 'value') else str(citizen.gender),
     }
     
     # Generate professional front side preview
@@ -725,7 +742,7 @@ def generate_license_files(
             # )
             # 2. Or continue with placeholder (current behavior)
         
-        # Prepare license data with all required fields
+        # Prepare license data with all required fields including citizen information
         license_data = {
             "id": license.id,
             "license_number": license.license_number,
@@ -737,6 +754,13 @@ def generate_license_files(
             "medical_conditions": license.medical_conditions,
             "iso_country_code": getattr(license, 'iso_country_code', 'ZAF'),
             "iso_issuing_authority": getattr(license, 'iso_issuing_authority', 'Department of Transport'),
+            # Merge citizen fields that the SA generator expects
+            "id_number": citizen.id_number,
+            "first_name": citizen.first_name,
+            "last_name": citizen.last_name,
+            "middle_name": getattr(citizen, 'middle_name', ''),
+            "date_of_birth": citizen.date_of_birth.isoformat() if citizen.date_of_birth else None,
+            "gender": citizen.gender.value if hasattr(citizen.gender, 'value') else str(citizen.gender),
         }
         
         # Prepare citizen data ensuring we have the photo URL
