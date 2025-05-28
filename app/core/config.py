@@ -12,13 +12,27 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
-    # CORS Configuration - Force allow all origins for deployment
-    BACKEND_CORS_ORIGINS: List[str] = ["*"]
+    # CORS Configuration - Explicitly list allowed origins instead of wildcard
+    BACKEND_CORS_ORIGINS: List[str] = [
+        "https://ampro-platform.vercel.app",
+        "http://localhost:3000", 
+        "http://localhost:8000",
+        "http://localhost"
+    ]
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
-        # Force all origins regardless of env settings
-        return ["*"]
+        # Always include the Vercel deployment URL
+        if isinstance(v, str) and not v.startswith("["):
+            origins = [i.strip() for i in v.split(",")]
+            if "https://ampro-platform.vercel.app" not in origins:
+                origins.append("https://ampro-platform.vercel.app")
+            return origins
+        elif isinstance(v, list):
+            if "https://ampro-platform.vercel.app" not in v:
+                v.append("https://ampro-platform.vercel.app")
+            return v
+        return ["https://ampro-platform.vercel.app"]
 
     # Project Information
     PROJECT_NAME: str = "AMPRO License System"

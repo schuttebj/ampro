@@ -27,13 +27,13 @@ app = FastAPI(
     redoc_url=f"{settings.API_V1_PREFIX}/redoc",
 )
 
-# Force allow all origins for CORS
-logger.info("Configuring CORS to allow all origins")
+# Log CORS settings
+logger.info(f"Configuring CORS with specific origins: {settings.BACKEND_CORS_ORIGINS}")
 
 # Set all CORS enabled origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Force wildcard regardless of settings
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
     allow_headers=["*"],
