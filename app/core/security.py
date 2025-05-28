@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Any, Optional, Union, List
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -141,4 +141,27 @@ async def get_current_officer_user(current_user: User = Depends(get_current_acti
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Officer access required",
         )
-    return current_user 
+    return current_user
+
+async def get_current_user_optional(
+    db: Session = Depends(get_db), token: str = Depends(oauth2_scheme_optional)
+) -> Optional[User]:
+    """
+    Get current user if authenticated, return None if not.
+    Use this for endpoints that allow both authenticated and unauthenticated access.
+    """
+    if not token:
+        return None
+    
+    try:
+        return await get_current_user(db=db, token=token)
+    except HTTPException:
+        return None
+
+def oauth2_scheme_optional(
+    authorization: Optional[str] = Header(None, include_in_schema=True)
+) -> Optional[str]:
+    """OAuth2 scheme that does not raise an exception when no authentication is provided."""
+    if authorization and authorization.startswith("Bearer "):
+        return authorization.replace("Bearer ", "")
+    return None 

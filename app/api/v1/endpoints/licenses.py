@@ -691,8 +691,11 @@ def generate_license_files(
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Generate complete license file package (front, back, PDFs) and store files
+    Generate license files (front, back, combined) for a specific license.
+    
+    Force regenerate can be used to create new files even if they already exist.
     """
+    # Get license
     license = crud.license.get(db, id=license_id)
     if not license:
         raise HTTPException(
@@ -700,12 +703,25 @@ def generate_license_files(
             detail="License not found",
         )
     
-    # Get related citizen
+    # Get citizen
     citizen = crud.citizen.get(db, id=license.citizen_id)
     if not citizen:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Citizen not found",
+        )
+    
+    # Log photo paths for debugging
+    logger.info(f"License generation for license_id={license_id}, citizen_id={citizen.id}")
+    logger.info(f"Photo URL: {citizen.photo_url}")
+    logger.info(f"Stored photo path: {citizen.stored_photo_path}")
+    logger.info(f"Processed photo path: {citizen.processed_photo_path}")
+    
+    # Check if photo exists before attempting generation
+    if not citizen.photo_url and not citizen.processed_photo_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Citizen has no photo",
         )
     
     try:
@@ -736,6 +752,7 @@ def generate_license_files(
             "postal_code": citizen.postal_code,
             "photo_url": citizen.photo_url,
             "processed_photo_path": citizen.processed_photo_path,
+            "stored_photo_path": citizen.stored_photo_path,
         }
         
         # Generate complete license package
@@ -755,17 +772,17 @@ def generate_license_files(
             )
         
         # Add cleanup task in background
-        background_tasks.add_task(file_manager.cleanup_temp_files, 1)  # Clean files older than 1 hour
+        background_tasks.add_task(file_manager.cleanup_temp_files, 1)
         
         # Log action
         crud.audit_log.create(
             db,
             obj_in={
                 "user_id": current_user.id,
-                "action_type": ActionType.CREATE,
+                "action_type": ActionType.GENERATE,
                 "resource_type": ResourceType.LICENSE,
                 "resource_id": str(license.id),
-                "description": f"User {current_user.username} generated license files for {license.license_number}"
+                "description": f"User {current_user.username} generated files for license {license.license_number}"
             }
         )
         
@@ -778,6 +795,7 @@ def generate_license_files(
         }
         
     except Exception as e:
+        logger.error(f"Error generating license files: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating license files: {str(e)}"

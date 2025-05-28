@@ -126,19 +126,33 @@ class ProductionLicenseGenerator:
         
         # Check if we already have a valid processed photo
         if existing_processed_path and file_manager.file_exists(existing_processed_path):
+            logger.info(f"Using existing processed photo at {existing_processed_path}")
             return existing_processed_path
         
-        # Download and process new photo
+        # If we have a processed path but file doesn't exist, log this
+        if existing_processed_path:
+            logger.warning(f"Processed photo path exists in DB but file not found: {existing_processed_path}")
+        
+        # Download and process new photo if URL is available
         if photo_url:
-            # Clean up old photos before processing new one
-            file_manager.cleanup_old_files(citizen_id)
-            
-            original_path, processed_path = file_manager.download_and_store_photo(
-                photo_url, citizen_id
-            )
-            
-            logger.info(f"Processed new photo for citizen {citizen_id}")
-            return processed_path
+            try:
+                # Clean up old photos before processing new one
+                file_manager.cleanup_old_files(citizen_id)
+                
+                original_path, processed_path = file_manager.download_and_store_photo(
+                    photo_url, citizen_id
+                )
+                
+                logger.info(f"Processed new photo for citizen {citizen_id}")
+                return processed_path
+            except Exception as e:
+                logger.error(f"Error processing photo from URL {photo_url}: {str(e)}")
+                # If the processed path exists in DB but we couldn't download the photo,
+                # try using the stored path directly as a fallback
+                if existing_processed_path:
+                    logger.warning(f"Falling back to DB processed path despite file not found: {existing_processed_path}")
+                    return existing_processed_path
+                raise
         
         # No photo available - this should be handled by the caller
         raise ValueError(f"No photo available for citizen {citizen_id}")

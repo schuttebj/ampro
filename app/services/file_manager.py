@@ -45,7 +45,22 @@ class FileManager:
     def _ensure_directories(self):
         """Create necessary directories if they don't exist"""
         for directory in [self.base_dir, self.licenses_dir, self.photos_dir, self.temp_dir]:
-            directory.mkdir(parents=True, exist_ok=True)
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Ensured directory exists: {directory}")
+            except Exception as e:
+                logger.error(f"Error creating directory {directory}: {str(e)}")
+                
+        # Add a .gitkeep file to keep the directories in git
+        for directory in [self.licenses_dir, self.photos_dir, self.temp_dir]:
+            gitkeep = directory / ".gitkeep"
+            if not gitkeep.exists():
+                try:
+                    with open(gitkeep, 'w') as f:
+                        f.write("")
+                    logger.info(f"Created .gitkeep in {directory}")
+                except Exception as e:
+                    logger.error(f"Error creating .gitkeep in {directory}: {str(e)}")
     
     def _generate_file_hash(self, content: bytes) -> str:
         """Generate SHA256 hash for file content"""
@@ -150,6 +165,8 @@ class FileManager:
         if not photo_url:
             raise ValueError("Photo URL is required")
         
+        logger.info(f"Downloading/storing photo for citizen {citizen_id} from URL: {photo_url}")
+        
         try:
             # Check if this is a local file URL (either static or API serve endpoint)
             if photo_url.startswith('/static/storage/'):
@@ -161,6 +178,7 @@ class FileManager:
                     # Read existing file content
                     with open(full_path, 'rb') as f:
                         content = f.read()
+                    logger.info(f"Read content from static storage path: {full_path}")
                 else:
                     raise ValueError(f"Local file not found: {relative_path}")
             elif photo_url.startswith('/api/v1/files/serve/'):
@@ -168,28 +186,81 @@ class FileManager:
                 relative_path = photo_url.replace('/api/v1/files/serve/', '')
                 full_path = self.base_dir / relative_path
                 
-                if full_path.exists():
-                    # Read existing file content
-                    with open(full_path, 'rb') as f:
-                        content = f.read()
-                else:
-                    raise ValueError(f"Local file not found: {relative_path}")
-            elif photo_url.startswith(('http://', 'https://')):
-                # Download from external URL
-                response = requests.get(photo_url, timeout=30)
-                response.raise_for_status()
-                content = response.content
-            else:
-                # Assume it's a relative path to a local file
-                # This handles cases like "photos/filename.png"
-                full_path = self.base_dir / photo_url
+                logger.info(f"Checking API serve path: {full_path}")
                 
                 if full_path.exists():
                     # Read existing file content
                     with open(full_path, 'rb') as f:
                         content = f.read()
+                    logger.info(f"Read content from API serve path: {full_path}")
                 else:
-                    raise ValueError(f"Local file not found: {photo_url}")
+                    # Try to find the file by looking at other potential paths
+                    # 1. Try looking for the filename in the photos directory
+                    filename = Path(relative_path).name
+                    photos_path = self.photos_dir / filename
+                    
+                    logger.info(f"File not found at {full_path}, trying alternative path: {photos_path}")
+                    
+                    if photos_path.exists():
+                        with open(photos_path, 'rb') as f:
+                            content = f.read()
+                        logger.info(f"Found file at alternative path: {photos_path}")
+                    else:
+                        # 2. Try looking for citizen's existing photos
+                        citizen_photos = list(self.photos_dir.glob(f"citizen_{citizen_id}_*"))
+                        logger.info(f"Searching for existing citizen photos: found {len(citizen_photos)} files")
+                        
+                        if citizen_photos:
+                            # Use the most recent photo
+                            most_recent = max(citizen_photos, key=lambda p: p.stat().st_mtime)
+                            with open(most_recent, 'rb') as f:
+                                content = f.read()
+                            logger.info(f"Using most recent citizen photo: {most_recent}")
+                        else:
+                            raise ValueError(f"Local file not found: {relative_path}")
+            elif photo_url.startswith(('http://', 'https://')):
+                # Download from external URL
+                logger.info(f"Downloading from external URL: {photo_url}")
+                response = requests.get(photo_url, timeout=30)
+                response.raise_for_status()
+                content = response.content
+                logger.info(f"Successfully downloaded {len(content)} bytes from external URL")
+            else:
+                # Assume it's a relative path to a local file
+                # This handles cases like "photos/filename.png"
+                full_path = self.base_dir / photo_url
+                
+                logger.info(f"Checking relative path: {full_path}")
+                
+                if full_path.exists():
+                    # Read existing file content
+                    with open(full_path, 'rb') as f:
+                        content = f.read()
+                    logger.info(f"Read content from relative path: {full_path}")
+                else:
+                    # Try checking just the filename in the photos directory
+                    filename = Path(photo_url).name
+                    photos_path = self.photos_dir / filename
+                    
+                    logger.info(f"File not found at {full_path}, trying photos directory: {photos_path}")
+                    
+                    if photos_path.exists():
+                        with open(photos_path, 'rb') as f:
+                            content = f.read()
+                        logger.info(f"Found file in photos directory: {photos_path}")
+                    else:
+                        # Try looking for citizen's existing photos
+                        citizen_photos = list(self.photos_dir.glob(f"citizen_{citizen_id}_*"))
+                        logger.info(f"Searching for existing citizen photos: found {len(citizen_photos)} files")
+                        
+                        if citizen_photos:
+                            # Use the most recent photo
+                            most_recent = max(citizen_photos, key=lambda p: p.stat().st_mtime)
+                            with open(most_recent, 'rb') as f:
+                                content = f.read()
+                            logger.info(f"Using most recent citizen photo: {most_recent}")
+                        else:
+                            raise ValueError(f"Local file not found: {photo_url}")
             
             # Generate filename based on content hash
             content_hash = self._generate_file_hash(content)

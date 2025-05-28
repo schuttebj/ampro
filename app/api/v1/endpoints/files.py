@@ -7,10 +7,12 @@ import uuid
 from pathlib import Path
 import shutil
 import logging
+from datetime import datetime
+import mimetypes
 
 from app import crud
 from app.api.v1.dependencies import get_db
-from app.core.security import get_current_active_user
+from app.core.security import get_current_active_user, get_current_user_optional
 from app.models.user import User
 from app.services.file_manager import file_manager
 from app.models.audit import ActionType, ResourceType
@@ -155,72 +157,123 @@ async def delete_file(
         )
 
 @router.get("/serve/{file_path:path}")
-async def serve_file(
+def serve_file(
+    *,
     file_path: str,
+    current_user: User = Depends(get_current_user_optional),
 ) -> Any:
     """
-    Serve a file from storage (public access for image display).
+    Serve a file from storage - photos are public, other files require authentication
     """
     try:
-        # Get full file path
+        # Check if file exists
         full_path = file_manager.base_dir / file_path
         
-        if not full_path.exists():
+        if not full_path.exists() or not full_path.is_file():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found"
+                detail="File not found",
             )
         
-        # Determine media type
-        if file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
-            media_type = f"image/{file_path.split('.')[-1].lower()}"
-        elif file_path.lower().endswith('.pdf'):
-            media_type = "application/pdf"
-        else:
-            media_type = "application/octet-stream"
+        # Determine if this is an image/photo that should be public
+        is_public = any([
+            file_path.startswith('photos/'),
+            file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')),
+            '/photos/' in file_path
+        ])
         
+        # Check authentication for non-public files
+        if not is_public and not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for this file",
+            )
+        
+        # Log access for auditing
+        logger.info(f"Serving file: {file_path} to {'authenticated user' if current_user else 'public'}")
+        
+        # Return file response
         return FileResponse(
-            path=str(full_path),
-            media_type=media_type,
-            filename=full_path.name
+            path=full_path,
+            filename=full_path.name,
+            media_type=mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error serving file: {str(e)}")
+        logger.error(f"Error serving file {file_path}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error serving file: {str(e)}"
         )
 
 @router.get("/debug/{file_path:path}")
-async def debug_file(
+def debug_file_info(
+    *,
     file_path: str,
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Debug endpoint to check file existence and URL generation.
+    Debug endpoint to check file existence and metadata
     """
-    try:
-        # Get full file path
-        full_path = file_manager.base_dir / file_path
-        
-        # Get file URL
-        file_url = file_manager.get_file_url(file_path)
-        
-        return {
-            "file_path": file_path,
-            "full_path": str(full_path),
-            "file_url": file_url,
-            "exists": full_path.exists(),
-            "is_file": full_path.is_file() if full_path.exists() else False,
-            "size": full_path.stat().st_size if full_path.exists() else 0,
-            "storage_base_dir": str(file_manager.base_dir),
-            "absolute_full_path": str(full_path.absolute()),
+    logger.info(f"Debug request for file: {file_path}")
+    
+    # First, check if file exists directly
+    full_path = file_manager.base_dir / file_path
+    exists_direct = full_path.exists()
+    
+    # Check if file exists using file_manager method
+    exists_manager = file_manager.file_exists(file_path)
+    
+    # Check for files with the same name in photos directory
+    filename = Path(file_path).name
+    photos_path = file_manager.photos_dir / filename
+    exists_in_photos = photos_path.exists()
+    
+    # Check for citizen files with similar pattern (if filename contains ID)
+    citizen_id = None
+    citizen_files = []
+    parts = filename.split('_')
+    if len(parts) > 1 and parts[0] == 'citizen':
+        try:
+            citizen_id = int(parts[1])
+            citizen_files = list(file_manager.photos_dir.glob(f"citizen_{citizen_id}_*"))
+            citizen_files = [str(p.relative_to(file_manager.base_dir)) for p in citizen_files]
+        except (ValueError, IndexError):
+            pass
+    
+    result = {
+        "requested_path": file_path,
+        "full_path": str(full_path),
+        "exists_direct": exists_direct,
+        "exists_manager": exists_manager,
+        "filename": filename,
+        "photos_path": str(photos_path),
+        "exists_in_photos": exists_in_photos,
+        "citizen_id": citizen_id,
+        "citizen_files": citizen_files,
+        "base_dir": str(file_manager.base_dir),
+        "photos_dir": str(file_manager.photos_dir),
+        "storage_dirs": {
+            "exists": {
+                "base": Path(file_manager.base_dir).exists(),
+                "photos": Path(file_manager.photos_dir).exists(),
+                "licenses": Path(file_manager.licenses_dir).exists(),
+                "temp": Path(file_manager.temp_dir).exists()
+            }
         }
-        
-    except Exception as e:
-        logger.error(f"Error debugging file: {str(e)}")
-        return {
-            "error": str(e),
-            "file_path": file_path,
-        } 
+    }
+    
+    # If file exists, add metadata
+    if exists_direct:
+        stat = full_path.stat()
+        result.update({
+            "size_bytes": stat.st_size,
+            "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "is_file": full_path.is_file(),
+            "is_dir": full_path.is_dir()
+        })
+    
+    return result 
