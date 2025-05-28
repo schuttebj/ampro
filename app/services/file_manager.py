@@ -332,7 +332,9 @@ class FileManager:
         Returns:
             URL to access the file
         """
-        return f"/static/storage/{relative_path}"
+        # Use the authenticated file serving endpoint instead of static files
+        # This ensures CORS and authentication are handled properly
+        return f"/api/v1/files/serve/{relative_path}"
     
     def file_exists(self, relative_path: str) -> bool:
         """Check if file exists"""

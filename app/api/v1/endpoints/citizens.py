@@ -236,14 +236,14 @@ def update_citizen(
                 processed_photo_path=processed_path
             )
             
-            # Clean up old files in background
+            # Only clean up old files after all database operations are successful
             if old_stored_path or old_processed_path:
                 background_tasks.add_task(
                     file_manager.cleanup_old_files, 
                     citizen_id, 
                     exclude_paths=[original_path, processed_path]
                 )
-                
+            
         except Exception as e:
             # Log the error but don't fail the update
             crud.audit_log.create(
@@ -389,7 +389,7 @@ def update_citizen_photo(
             processed_photo_path=processed_path
         )
         
-        # Clean up old files in background
+        # Only clean up old files after all database operations are successful
         if old_stored_path or old_processed_path:
             background_tasks.add_task(
                 file_manager.cleanup_old_files, 
@@ -397,7 +397,7 @@ def update_citizen_photo(
                 exclude_paths=[original_path, processed_path]
             )
         
-        # Log action
+        # Log the photo update action
         crud.audit_log.create(
             db,
             obj_in={

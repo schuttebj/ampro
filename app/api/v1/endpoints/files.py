@@ -191,4 +191,37 @@ async def serve_file(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error serving file: {str(e)}"
-        ) 
+        )
+
+@router.get("/debug/{file_path:path}")
+async def debug_file(
+    file_path: str,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Debug endpoint to check file existence and URL generation.
+    """
+    try:
+        # Get full file path
+        full_path = file_manager.base_dir / file_path
+        
+        # Get file URL
+        file_url = file_manager.get_file_url(file_path)
+        
+        return {
+            "file_path": file_path,
+            "full_path": str(full_path),
+            "file_url": file_url,
+            "exists": full_path.exists(),
+            "is_file": full_path.is_file() if full_path.exists() else False,
+            "size": full_path.stat().st_size if full_path.exists() else 0,
+            "storage_base_dir": str(file_manager.base_dir),
+            "absolute_full_path": str(full_path.absolute()),
+        }
+        
+    except Exception as e:
+        logger.error(f"Error debugging file: {str(e)}")
+        return {
+            "error": str(e),
+            "file_path": file_path,
+        } 
