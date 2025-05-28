@@ -726,14 +726,15 @@ class SALicenseGenerator:
         license_img.save(buffer, format="PNG", dpi=(DPI, DPI))
         return base64.b64encode(buffer.getvalue()).decode('utf-8')
     
-    def generate_watermark_template(self, width: int = CARD_W_PX, height: int = CARD_H_PX, 
-                                  text: str = "SOUTH AFRICA") -> str:
-        """Generate standalone watermark template"""
-        watermark = self._create_watermark_pattern(width, height, text)
+    def generate_watermark_template(self, width: int, height: int, text: str = "SOUTH AFRICA") -> str:
+        """Generate standalone watermark template for separate PDF page"""
+        # Create watermark pattern
+        watermark_img = self._create_watermark_pattern(width, height, text)
         
-        buffer = io.BytesIO()
-        watermark.save(buffer, format="PNG", dpi=(DPI, DPI))
-        return base64.b64encode(buffer.getvalue()).decode('utf-8')
+        # Convert to base64
+        img_buffer = io.BytesIO()
+        watermark_img.save(img_buffer, format='PNG')
+        return base64.b64encode(img_buffer.getvalue()).decode('utf-8')
 
 
 # Singleton instance

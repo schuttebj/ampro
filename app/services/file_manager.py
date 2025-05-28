@@ -184,6 +184,21 @@ class FileManager:
                     
                 logger.info(f"Got photo from static storage: {file_path}")
                 
+            elif photo_url.startswith('/api/v1/files/'):
+                # This is a relative API endpoint URL - construct full URL
+                # Get the base URL from environment or use default
+                base_url = os.environ.get('BASE_URL', 'https://ampro-licence.onrender.com')
+                full_url = f"{base_url}{photo_url}"
+                
+                logger.info(f"Converting relative URL {photo_url} to full URL: {full_url}")
+                
+                # Download the photo from the full URL
+                import requests
+                response = requests.get(full_url, timeout=10)
+                response.raise_for_status()  # Raise exception for HTTP errors
+                photo_bytes = response.content
+                logger.info(f"Downloaded photo from constructed URL: {full_url}")
+                
             elif photo_url.startswith('/api/v1/files/serve/'):
                 # This is a path via our API serve endpoint
                 file_path = photo_url.replace('/api/v1/files/serve/', '')
@@ -319,6 +334,7 @@ class FileManager:
             relative_original = str(original_path.relative_to(self.base_dir))
             relative_processed = str(processed_path.relative_to(self.base_dir))
             
+            logger.info(f"Photo processing complete - Original: {relative_original}, Processed: {relative_processed}")
             return relative_original, relative_processed
             
         except Exception as e:
