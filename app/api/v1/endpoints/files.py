@@ -163,7 +163,7 @@ async def serve_file(
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Serve a file from storage.
+    Serve a file from storage (requires authentication).
     """
     try:
         # Security check - ensure path doesn't contain directory traversal
@@ -351,4 +351,62 @@ async def get_storage_stats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get storage stats: {str(e)}"
+        )
+
+@router.get("/public/photos/{filename}")
+async def serve_public_photo(
+    filename: str
+) -> Any:
+    """
+    Serve photos publicly (no authentication required).
+    This endpoint is specifically for citizen photos and other public images.
+    """
+    try:
+        # Security check - ensure filename doesn't contain directory traversal
+        if ".." in filename or "/" in filename or "\\" in filename:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid filename"
+            )
+        
+        # Look for the file in the photos directory
+        photo_path = file_manager.photos_dir / filename
+        
+        # Check if file exists
+        if not photo_path.exists() or not photo_path.is_file():
+            logger.warning(f"Photo not found: {photo_path}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Photo not found"
+            )
+        
+        # Determine content type
+        content_type = "application/octet-stream"
+        file_ext = photo_path.suffix.lower()
+        if file_ext in ['.jpg', '.jpeg']:
+            content_type = "image/jpeg"
+        elif file_ext == '.png':
+            content_type = "image/png"
+        elif file_ext == '.gif':
+            content_type = "image/gif"
+        elif file_ext == '.webp':
+            content_type = "image/webp"
+        
+        # Return file with appropriate caching headers
+        return FileResponse(
+            path=str(photo_path),
+            media_type=content_type,
+            filename=photo_path.name,
+            headers={
+                "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
+                "Access-Control-Allow-Origin": "*"  # Allow cross-origin access
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving photo: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to serve photo: {str(e)}"
         ) 

@@ -513,8 +513,13 @@ class FileManager:
         Returns:
             URL to access the file
         """
-        # Use the authenticated file serving endpoint instead of static files
-        # This ensures CORS and authentication are handled properly
+        # Check if this is a photo file
+        if relative_path.startswith('photos/') or '/photos/' in relative_path:
+            # Extract filename for public photo endpoint
+            filename = Path(relative_path).name
+            return f"/api/v1/files/public/photos/{filename}"
+        
+        # For non-photo files, use the authenticated endpoint
         return f"/api/v1/files/serve/{relative_path}"
     
     def file_exists(self, file_path: str, force_create_directories: bool = False) -> bool:
