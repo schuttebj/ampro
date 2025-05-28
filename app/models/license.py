@@ -181,7 +181,8 @@ class LicenseApplication(BaseModel):
     # Relationships
     citizen = relationship("Citizen")
     reviewer = relationship("User", foreign_keys=[reviewed_by])
-    license = relationship("License")
+    previous_license = relationship("License", foreign_keys=[previous_license_id], post_update=True)
+    approved_license = relationship("License", foreign_keys=[approved_license_id], post_update=True)
     location = relationship("Location", back_populates="applications")
     print_jobs = relationship("PrintJob", back_populates="application")
     shipping_record = relationship("ShippingRecord", back_populates="application", uselist=False)
