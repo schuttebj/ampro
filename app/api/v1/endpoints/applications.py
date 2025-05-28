@@ -24,12 +24,55 @@ def read_applications(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
+    status: str = None,
+    id: int = None,
+    citizen_search: str = None,
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Retrieve license applications.
+    Retrieve license applications with optional filtering.
     """
-    applications = crud.license_application.get_multi(db, skip=skip, limit=limit)
+    from sqlalchemy import and_, or_, text
+    from app.models.license_application import LicenseApplication as LicenseApplicationModel
+    from app.models.citizen import Citizen as CitizenModel
+    
+    query = db.query(LicenseApplicationModel)
+    
+    # Filter by specific application ID
+    if id is not None:
+        query = query.filter(LicenseApplicationModel.id == id)
+    
+    # Filter by status
+    if status:
+        try:
+            status_enum = ApplicationStatus(status)
+            query = query.filter(LicenseApplicationModel.status == status_enum)
+        except ValueError:
+            # Invalid status, ignore this filter
+            pass
+    
+    # Filter by citizen search (name or ID number)
+    if citizen_search:
+        # Join with citizen table for name search
+        query = query.join(CitizenModel, LicenseApplicationModel.citizen_id == CitizenModel.id)
+        
+        # Search by citizen ID number or name
+        if citizen_search.isdigit():
+            # Search by citizen ID number
+            query = query.filter(CitizenModel.id_number.ilike(f"%{citizen_search}%"))
+        else:
+            # Search by citizen name (first name or last name)
+            name_search = f"%{citizen_search}%"
+            query = query.filter(
+                or_(
+                    CitizenModel.first_name.ilike(name_search),
+                    CitizenModel.last_name.ilike(name_search),
+                    text(f"CONCAT(citizens.first_name, ' ', citizens.last_name) ILIKE '{name_search}'")
+                )
+            )
+    
+    # Apply pagination
+    applications = query.offset(skip).limit(limit).all()
     
     # Log action
     crud.audit_log.create(
@@ -38,7 +81,7 @@ def read_applications(
             "user_id": current_user.id,
             "action_type": ActionType.READ,
             "resource_type": ResourceType.APPLICATION,
-            "description": f"User {current_user.username} retrieved list of license applications"
+            "description": f"User {current_user.username} retrieved list of license applications with filters: status={status}, citizen_search={citizen_search}"
         }
     )
     

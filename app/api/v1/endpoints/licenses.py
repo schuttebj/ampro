@@ -35,23 +35,74 @@ def read_licenses(
     skip: int = 0,
     limit: int = 100,
     include_inactive: bool = False,
+    status: str = None,
+    license_number: str = None,
+    citizen_id_search: str = None,
+    citizen_name_search: str = None,
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Retrieve licenses. By default only returns active licenses.
+    Retrieve licenses with optional filtering.
     """
+    from sqlalchemy import and_, or_, text
+    from app.models.license import License as LicenseModel
+    from app.models.citizen import Citizen as CitizenModel
+    
     if include_inactive and not (current_user.is_superuser or getattr(current_user, 'is_admin', False)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can view inactive licenses",
         )
     
-    if include_inactive:
-        licenses = crud.license.get_multi(db, skip=skip, limit=limit)
-    else:
-        # Filter to only active licenses (not soft-deleted)
-        licenses = crud.license.get_multi_active(db, skip=skip, limit=limit)
+    query = db.query(LicenseModel)
     
+    # Filter by active/inactive status first
+    if not include_inactive:
+        query = query.filter(LicenseModel.is_active == True)
+    
+    # Filter by license status
+    if status:
+        try:
+            from app.models.license import LicenseStatus
+            status_enum = LicenseStatus(status)
+            query = query.filter(LicenseModel.status == status_enum)
+        except (ValueError, AttributeError):
+            # Invalid status, ignore this filter
+            pass
+    
+    # Filter by license number
+    if license_number:
+        query = query.filter(LicenseModel.license_number.ilike(f"%{license_number}%"))
+    
+    # Filter by citizen ID or name search
+    if citizen_id_search or citizen_name_search:
+        # Join with citizen table
+        query = query.join(CitizenModel, LicenseModel.citizen_id == CitizenModel.id)
+        
+        if citizen_id_search:
+            # Search by citizen ID number or database ID
+            if citizen_id_search.isdigit():
+                query = query.filter(
+                    or_(
+                        CitizenModel.id_number.ilike(f"%{citizen_id_search}%"),
+                        CitizenModel.id == int(citizen_id_search)
+                    )
+                )
+        
+        if citizen_name_search:
+            # Search by citizen name (first name or last name)
+            name_search = f"%{citizen_name_search}%"
+            query = query.filter(
+                or_(
+                    CitizenModel.first_name.ilike(name_search),
+                    CitizenModel.last_name.ilike(name_search),
+                    text(f"CONCAT(citizens.first_name, ' ', citizens.last_name) ILIKE '{name_search}'")
+                )
+            )
+    
+    # Apply pagination
+    licenses = query.offset(skip).limit(limit).all()
+
     # Log action
     crud.audit_log.create(
         db,
@@ -59,10 +110,10 @@ def read_licenses(
             "user_id": current_user.id,
             "action_type": ActionType.READ,
             "resource_type": ResourceType.LICENSE,
-            "description": f"User {current_user.username} retrieved list of licenses"
+            "description": f"User {current_user.username} retrieved list of licenses with filters: status={status}, license_number={license_number}, citizen_search={citizen_id_search or citizen_name_search}"
         }
     )
-    
+
     return licenses
 
 
