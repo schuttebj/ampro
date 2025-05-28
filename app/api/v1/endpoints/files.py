@@ -1,6 +1,6 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 import os
 import uuid
@@ -16,6 +16,7 @@ from app.core.security import get_current_active_user, get_current_user_optional
 from app.models.user import User
 from app.services.file_manager import file_manager
 from app.models.audit import ActionType, ResourceType
+from app.crud import citizen as crud_citizen
 
 logger = logging.getLogger(__name__)
 
@@ -157,55 +158,60 @@ async def delete_file(
         )
 
 @router.get("/serve/{file_path:path}")
-def serve_file(
-    *,
+async def serve_file(
     file_path: str,
-    current_user: User = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Serve a file from storage - photos are public, other files require authentication
+    Serve a file from storage.
     """
     try:
+        # Security check - ensure path doesn't contain directory traversal
+        if ".." in file_path or file_path.startswith("/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file path"
+            )
+        
+        # Get full file path
+        full_path = Path(file_manager.base_dir) / file_path
+        
         # Check if file exists
-        full_path = file_manager.base_dir / file_path
-        
         if not full_path.exists() or not full_path.is_file():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="File not found",
-            )
+            # Try checking in the photos directory if not found
+            alt_path = file_manager.photos_dir / Path(file_path).name
+            if alt_path.exists() and alt_path.is_file():
+                full_path = alt_path
+            else:
+                logger.warning(f"File not found: {full_path}")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File not found"
+                )
         
-        # Determine if this is an image/photo that should be public
-        is_public = any([
-            file_path.startswith('photos/'),
-            file_path.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')),
-            '/photos/' in file_path
-        ])
+        # Determine content type
+        content_type = "application/octet-stream"
+        file_ext = full_path.suffix.lower()
+        if file_ext in ['.jpg', '.jpeg']:
+            content_type = "image/jpeg"
+        elif file_ext == '.png':
+            content_type = "image/png"
+        elif file_ext == '.pdf':
+            content_type = "application/pdf"
         
-        # Check authentication for non-public files
-        if not is_public and not current_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required for this file",
-            )
-        
-        # Log access for auditing
-        logger.info(f"Serving file: {file_path} to {'authenticated user' if current_user else 'public'}")
-        
-        # Return file response
+        # Return file
         return FileResponse(
-            path=full_path,
-            filename=full_path.name,
-            media_type=mimetypes.guess_type(str(full_path))[0] or "application/octet-stream"
+            path=str(full_path),
+            media_type=content_type,
+            filename=full_path.name
         )
-        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error serving file {file_path}: {str(e)}")
+        logger.error(f"Error serving file: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error serving file: {str(e)}"
+            detail=f"Failed to serve file: {str(e)}"
         )
 
 @router.get("/debug/{file_path:path}")
@@ -277,3 +283,72 @@ def debug_file_info(
         })
     
     return result 
+
+@router.post("/citizen/{citizen_id}/photo")
+async def upload_citizen_photo(
+    *,
+    db: Session = Depends(get_db),
+    citizen_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Upload a photo for a citizen.
+    """
+    # Check citizen exists
+    citizen = crud_citizen.get(db, id=citizen_id)
+    if not citizen:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Citizen not found"
+        )
+    
+    try:
+        # Read file content
+        content = await file.read()
+        
+        # Store photo
+        relative_path, file_url = file_manager.store_uploaded_file(
+            content=content,
+            filename=f"citizen_{citizen_id}_{file.filename}",
+            category="photo"
+        )
+        
+        # Update citizen with photo URL
+        citizen = crud_citizen.update(
+            db,
+            db_obj=citizen,
+            obj_in={"photo_url": file_url}
+        )
+        
+        logger.info(f"Photo uploaded for citizen {citizen_id}: {relative_path}")
+        
+        return {
+            "success": True,
+            "path": relative_path,
+            "url": file_url,
+            "citizen_id": citizen_id
+        }
+    except Exception as e:
+        logger.error(f"Photo upload error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload photo: {str(e)}"
+        )
+
+@router.get("/storage/stats")
+async def get_storage_stats(
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get storage statistics.
+    """
+    try:
+        stats = file_manager.get_storage_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting storage stats: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get storage stats: {str(e)}"
+        ) 
