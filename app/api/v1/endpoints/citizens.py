@@ -3,6 +3,7 @@ from typing import Any, List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
 
 from app import crud
 from app.api.v1.dependencies import get_db
@@ -131,27 +132,40 @@ def search_citizens(
 ) -> Any:
     """
     Search citizens by ID number or name. By default only searches active citizens.
+    Supports partial matches for both ID numbers and names.
     """
+    from app.models.citizen import Citizen as CitizenModel
+    
     if include_inactive and not (current_user.is_superuser or current_user.is_admin):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can search inactive citizens",
         )
     
-    # Search by ID number
+    # Build query
+    query = db.query(CitizenModel)
+    
+    # Filter by active status if needed
+    if not include_inactive:
+        query = query.filter(CitizenModel.is_active == True)
+    
+    search_conditions = []
+    
+    # Search by ID number (partial match)
     if id_number:
-        citizen = crud.citizen.get_by_id_number(db, id_number=id_number)
-        # Filter out inactive citizens if not explicitly requested
-        if citizen and (citizen.is_active or include_inactive):
-            results = [citizen]
-        else:
-            results = []
-    # Search by name
-    elif first_name or last_name:
-        results = crud.citizen.search_by_name(
-            db, first_name=first_name, last_name=last_name, 
-            skip=skip, limit=limit, include_inactive=include_inactive
-        )
+        search_conditions.append(CitizenModel.id_number.ilike(f"%{id_number}%"))
+    
+    # Search by name (partial matches)
+    if first_name:
+        search_conditions.append(CitizenModel.first_name.ilike(f"%{first_name}%"))
+    
+    if last_name:
+        search_conditions.append(CitizenModel.last_name.ilike(f"%{last_name}%"))
+    
+    # If we have search conditions, apply them
+    if search_conditions:
+        query = query.filter(or_(*search_conditions))
+        results = query.offset(skip).limit(limit).all()
     else:
         results = []
     
@@ -165,7 +179,7 @@ def search_citizens(
             "user_id": current_user.id,
             "action_type": ActionType.READ,
             "resource_type": ResourceType.CITIZEN,
-            "description": f"User {current_user.username} searched {'all' if include_inactive else 'active'} citizens by {search_terms}"
+            "description": f"User {current_user.username} searched {'all' if include_inactive else 'active'} citizens by {search_terms}, found {len(results)} results"
         }
     )
     
