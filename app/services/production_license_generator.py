@@ -5,6 +5,7 @@ from datetime import datetime, date
 from typing import Dict, Any, Optional, Tuple
 from pathlib import Path
 import logging
+import uuid
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import pdf417gen
@@ -256,14 +257,27 @@ class ProductionLicenseGenerator:
         # Create temporary image file for PDF
         img_buffer = io.BytesIO(image_bytes)
         
-        # Add image to PDF
+        # Create a unique temporary file path instead of using BytesIO directly
+        temp_img_path = file_manager._get_file_path("temp", f"temp_img_{uuid.uuid4()}.png")
+        with open(temp_img_path, 'wb') as f:
+            f.write(image_bytes)
+        
+        # Add image to PDF using the file path
         c.drawImage(
-            img_buffer, 0, 0,
+            str(temp_img_path), 0, 0,
             width=page_width, height=page_height,
             preserveAspectRatio=True
         )
         
         c.save()
+        
+        # Clean up temporary file
+        try:
+            import os
+            os.unlink(temp_img_path)
+        except Exception as e:
+            logger.warning(f"Failed to delete temporary file {temp_img_path}: {str(e)}")
+        
         return pdf_buffer.getvalue()
     
     def _generate_combined_pdf(self, front_bytes: bytes, back_bytes: bytes, 
@@ -293,24 +307,41 @@ class ProductionLicenseGenerator:
         c.setSubject("Official South African Driver's License")
         c.setCreator("AMPRO Production Generator v2.0")
         
-        # Front page
-        front_buffer = io.BytesIO(front_bytes)
+        # Create temporary files for the images
+        front_temp_path = file_manager._get_file_path("temp", f"temp_front_{uuid.uuid4()}.png")
+        back_temp_path = file_manager._get_file_path("temp", f"temp_back_{uuid.uuid4()}.png")
+        
+        with open(front_temp_path, 'wb') as f:
+            f.write(front_bytes)
+            
+        with open(back_temp_path, 'wb') as f:
+            f.write(back_bytes)
+        
+        # Front page using file path
         c.drawImage(
-            front_buffer, 0, 0,
+            str(front_temp_path), 0, 0,
             width=page_width, height=page_height,
             preserveAspectRatio=True
         )
         c.showPage()
         
-        # Back page
-        back_buffer = io.BytesIO(back_bytes)
+        # Back page using file path
         c.drawImage(
-            back_buffer, 0, 0,
+            str(back_temp_path), 0, 0,
             width=page_width, height=page_height,
             preserveAspectRatio=True
         )
         
         c.save()
+        
+        # Clean up temporary files
+        try:
+            import os
+            os.unlink(front_temp_path)
+            os.unlink(back_temp_path)
+        except Exception as e:
+            logger.warning(f"Failed to delete temporary files: {str(e)}")
+        
         return pdf_buffer.getvalue()
     
     def _files_exist(self, license_id: int) -> bool:
@@ -400,13 +431,10 @@ class ProductionLicenseGenerator:
                 photo_url, citizen_id
             )
             
-            logger.info(f"Updated photo for citizen {citizen_id}")
             return original_path, processed_path
-            
         except Exception as e:
-            logger.error(f"Error updating citizen photo {citizen_id}: {str(e)}")
+            logger.error(f"Error updating citizen photo: {str(e)}")
             raise
 
-
-# Global instance
+# Create a singleton instance
 production_generator = ProductionLicenseGenerator() 
