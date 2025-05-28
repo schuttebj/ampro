@@ -1,8 +1,8 @@
 from typing import Optional, List, TYPE_CHECKING, Any, Union, Dict, ForwardRef
 from datetime import date, datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
-from app.models.license import LicenseCategory, LicenseStatus, ApplicationStatus
+from app.models.license import LicenseCategory, LicenseStatus, ApplicationStatus, ApplicationType
 
 # Avoid circular imports
 if TYPE_CHECKING:
@@ -76,18 +76,20 @@ class LicenseApplicationBase(BaseModel):
     """
     Base schema for license application with common attributes.
     """
-    citizen_id: Optional[int] = None
-    applied_category: Optional[LicenseCategory] = None
+    citizen_id: int
+    applied_category: LicenseCategory
     status: Optional[ApplicationStatus] = None
+    application_type: Optional[ApplicationType] = ApplicationType.NEW
+    previous_license_id: Optional[int] = None
     application_date: Optional[datetime] = None
-    last_updated: Optional[datetime] = None
-    reviewed_by: Optional[int] = None
-    review_date: Optional[datetime] = None
-    review_notes: Optional[str] = None
     documents_verified: Optional[bool] = False
     medical_verified: Optional[bool] = False
     payment_verified: Optional[bool] = False
-    approved_license_id: Optional[int] = None
+    payment_amount: Optional[int] = None
+    payment_reference: Optional[str] = None
+    collection_point: Optional[str] = None
+    preferred_collection_date: Optional[date] = None
+    review_notes: Optional[str] = None
 
 
 class LicenseApplicationCreate(LicenseApplicationBase):
@@ -97,6 +99,7 @@ class LicenseApplicationCreate(LicenseApplicationBase):
     citizen_id: int
     applied_category: LicenseCategory
     status: ApplicationStatus = ApplicationStatus.SUBMITTED
+    application_type: ApplicationType = ApplicationType.NEW
 
 
 class LicenseApplicationUpdate(LicenseApplicationBase):

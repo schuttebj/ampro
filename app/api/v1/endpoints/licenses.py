@@ -694,69 +694,66 @@ def generate_license_files(
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Generate license files (front, back, combined) for a specific license.
-    
-    Force regenerate can be used to create new files even if they already exist.
+    Generate license files with photo (front, back, combined PDF).
+    This creates production-ready files stored on the server.
     """
-    # Get license
-    license = crud.license.get(db, id=license_id)
-    if not license:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="License not found",
-        )
-    
-    # Get citizen
-    citizen = crud.citizen.get(db, id=license.citizen_id)
-    if not citizen:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Citizen not found",
-        )
-    
-    # Log photo paths for debugging
-    logger.info(f"License generation for license_id={license_id}, citizen_id={citizen.id}")
-    logger.info(f"Photo URL: {citizen.photo_url}")
-    logger.info(f"Stored photo path: {citizen.stored_photo_path}")
-    logger.info(f"Processed photo path: {citizen.processed_photo_path}")
-    
-    # Check if photo exists before attempting generation
-    if not citizen.photo_url and not citizen.processed_photo_path:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Citizen has no photo",
-        )
-    
     try:
-        # Prepare data for generation
+        # Get license with citizen
+        license = crud.license.get(db, id=license_id)
+        if not license:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="License not found",
+            )
+        
+        # Get citizen with photo information
+        citizen = crud.citizen.get(db, id=license.citizen_id)
+        if not citizen:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Citizen not found",
+            )
+        
+        # Check if citizen has a photo
+        if not citizen.photo_url:
+            logger.warning(f"Citizen {citizen.id} has no photo URL")
+            # You could either:
+            # 1. Raise an error requiring photo upload first
+            # raise HTTPException(
+            #     status_code=status.HTTP_400_BAD_REQUEST,
+            #     detail="Citizen photo is required before generating license. Please upload a photo first.",
+            # )
+            # 2. Or continue with placeholder (current behavior)
+        
+        # Prepare license data with all required fields
         license_data = {
             "id": license.id,
             "license_number": license.license_number,
             "category": license.category.value,
-            "issue_date": license.issue_date,
-            "expiry_date": license.expiry_date,
+            "issue_date": license.issue_date.isoformat() if license.issue_date else None,
+            "expiry_date": license.expiry_date.isoformat() if license.expiry_date else None,
             "status": license.status.value,
             "restrictions": license.restrictions,
             "medical_conditions": license.medical_conditions,
-            "barcode_data": license.barcode_data,
+            "iso_country_code": getattr(license, 'iso_country_code', 'ZAF'),
+            "iso_issuing_authority": getattr(license, 'iso_issuing_authority', 'Department of Transport'),
         }
         
+        # Prepare citizen data ensuring we have the photo URL
         citizen_data = {
             "id": citizen.id,
             "id_number": citizen.id_number,
             "first_name": citizen.first_name,
             "last_name": citizen.last_name,
-            "middle_name": citizen.middle_name,
-            "date_of_birth": citizen.date_of_birth,
-            "gender": citizen.gender.value,
-            "address_line1": citizen.address_line1,
-            "address_line2": citizen.address_line2,
-            "city": citizen.city,
-            "postal_code": citizen.postal_code,
-            "photo_url": citizen.photo_url,
-            "processed_photo_path": citizen.processed_photo_path,
-            "stored_photo_path": citizen.stored_photo_path,
+            "middle_name": getattr(citizen, 'middle_name', ''),
+            "date_of_birth": citizen.date_of_birth.isoformat() if citizen.date_of_birth else None,
+            "gender": citizen.gender,
+            "nationality": getattr(citizen, 'nationality', 'South African'),
+            "photo_url": citizen.photo_url,  # This might be None
+            "processed_photo_path": getattr(citizen, 'processed_photo_path', None),
         }
+        
+        logger.info(f"Generating license files for license {license_id} with citizen photo: {citizen.photo_url}")
         
         # Generate complete license package
         result = production_generator.generate_complete_license(

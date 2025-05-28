@@ -132,6 +132,14 @@ class ShippingStatus(str, enum.Enum):
     FAILED = "failed"                         # Shipping failed
 
 
+class ApplicationType(str, enum.Enum):
+    NEW = "new"                               # First-time application
+    RENEWAL = "renewal"                       # License renewal
+    REPLACEMENT = "replacement"               # Lost/damaged license replacement
+    UPGRADE = "upgrade"                       # Category upgrade (e.g., B to C)
+    CONVERSION = "conversion"                 # Foreign license conversion
+
+
 class LicenseApplication(BaseModel):
     """
     License application model to track license applications.
@@ -139,10 +147,17 @@ class LicenseApplication(BaseModel):
     citizen_id = Column(Integer, ForeignKey("citizen.id"), nullable=False)
     applied_category = Column(Enum(LicenseCategory), nullable=False)
     status = Column(Enum(ApplicationStatus), default=ApplicationStatus.SUBMITTED, nullable=False)
+    application_type = Column(Enum(ApplicationType), default=ApplicationType.NEW, nullable=False)
     
     # Application details
     application_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # For renewals/replacements, reference the previous license
+    previous_license_id = Column(Integer, ForeignKey("license.id"), nullable=True)
+    
+    # Location assignment - where application is processed and collection point
+    location_id = Column(Integer, ForeignKey("location.id"), nullable=True)
     
     # Review information
     reviewed_by = Column(Integer, ForeignKey("user.id"), nullable=True)
@@ -157,7 +172,7 @@ class LicenseApplication(BaseModel):
     payment_reference = Column(String, nullable=True)
     
     # Collection details
-    collection_point = Column(String, nullable=True)
+    collection_point = Column(String, nullable=True)  # Deprecated - use location_id instead
     preferred_collection_date = Column(Date, nullable=True)
     
     # When approved, create license
@@ -167,6 +182,7 @@ class LicenseApplication(BaseModel):
     citizen = relationship("Citizen")
     reviewer = relationship("User", foreign_keys=[reviewed_by])
     license = relationship("License")
+    location = relationship("Location", back_populates="applications")
     print_jobs = relationship("PrintJob", back_populates="application")
     shipping_record = relationship("ShippingRecord", back_populates="application", uselist=False)
     
