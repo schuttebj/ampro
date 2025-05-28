@@ -30,22 +30,18 @@ def upgrade():
     # Update LicenseStatus enum to include new statuses
     op.execute("ALTER TYPE licensestatus ADD VALUE IF NOT EXISTS 'pending_collection'")
     
-    # Drop existing types if they exist (in case of failed previous deployments)
-    op.execute("DROP TYPE IF EXISTS printjobstatus CASCADE")
-    op.execute("DROP TYPE IF EXISTS shippingstatus CASCADE") 
-    op.execute("DROP TYPE IF EXISTS userrole CASCADE")
+    # Create enum types using SQLAlchemy's proper enum creation
+    printjob_status = postgresql.ENUM('queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled', name='printjobstatus')
+    shipping_status = postgresql.ENUM('pending', 'in_transit', 'delivered', 'failed', name='shippingstatus')
+    user_role = postgresql.ENUM('admin', 'manager', 'officer', 'printer', 'viewer', name='userrole')
     
-    # Create PrintJobStatus enum
-    op.execute("CREATE TYPE printjobstatus AS ENUM ('queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled')")
-    
-    # Create ShippingStatus enum
-    op.execute("CREATE TYPE shippingstatus AS ENUM ('pending', 'in_transit', 'delivered', 'failed')")
-    
-    # Create UserRole enum
-    op.execute("CREATE TYPE userrole AS ENUM ('admin', 'manager', 'officer', 'printer', 'viewer')")
+    # Create the enum types (this will handle existence checking)
+    printjob_status.create(op.get_bind(), checkfirst=True)
+    shipping_status.create(op.get_bind(), checkfirst=True)
+    user_role.create(op.get_bind(), checkfirst=True)
     
     # Add role column to user table
-    op.add_column('user', sa.Column('role', postgresql.ENUM('admin', 'manager', 'officer', 'printer', 'viewer', name='userrole'), nullable=False, server_default='officer'))
+    op.add_column('user', sa.Column('role', user_role, nullable=False, server_default='officer'))
     
     # Update existing superusers to admin role
     op.execute("UPDATE \"user\" SET role = 'admin' WHERE is_superuser = true")
@@ -73,7 +69,7 @@ def upgrade():
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('application_id', sa.Integer(), nullable=False),
         sa.Column('license_id', sa.Integer(), nullable=False),
-        sa.Column('status', postgresql.ENUM('queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled', name='printjobstatus'), nullable=False),
+        sa.Column('status', printjob_status, nullable=False),
         sa.Column('priority', sa.Integer(), nullable=False),
         sa.Column('front_pdf_path', sa.String(), nullable=False),
         sa.Column('back_pdf_path', sa.String(), nullable=False),
@@ -104,7 +100,7 @@ def upgrade():
         sa.Column('application_id', sa.Integer(), nullable=False),
         sa.Column('license_id', sa.Integer(), nullable=False),
         sa.Column('print_job_id', sa.Integer(), nullable=False),
-        sa.Column('status', postgresql.ENUM('pending', 'in_transit', 'delivered', 'failed', name='shippingstatus'), nullable=False),
+        sa.Column('status', shipping_status, nullable=False),
         sa.Column('tracking_number', sa.String(), nullable=True),
         sa.Column('collection_point', sa.String(), nullable=False),
         sa.Column('collection_address', sa.Text(), nullable=True),
@@ -152,9 +148,7 @@ def downgrade():
     # Remove role column
     op.drop_column('user', 'role')
     
-    # Drop enums
-    op.execute("DROP TYPE IF EXISTS shippingstatus")
-    op.execute("DROP TYPE IF EXISTS printjobstatus")
-    op.execute("DROP TYPE IF EXISTS userrole")
-    
-    # Note: Cannot easily remove enum values in PostgreSQL, so we leave them 
+    # Drop enums using SQLAlchemy's proper method
+    postgresql.ENUM(name='shippingstatus').drop(op.get_bind(), checkfirst=True)
+    postgresql.ENUM(name='printjobstatus').drop(op.get_bind(), checkfirst=True)
+    postgresql.ENUM(name='userrole').drop(op.get_bind(), checkfirst=True) 
