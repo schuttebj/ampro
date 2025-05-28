@@ -23,7 +23,7 @@ def upgrade():
     op.add_column('license', sa.Column('iso_country_code', sa.String(3), nullable=False, server_default='ZAF'))
     op.add_column('license', sa.Column('iso_issuing_authority', sa.String(100), nullable=False, server_default='Department of Transport'))
     op.add_column('license', sa.Column('iso_document_number', sa.String(50), nullable=True))
-    op.add_column('license', sa.Column('iso_version', sa.String(10), nullable=False, server_default='18013-1:2018'))
+    op.add_column('license', sa.Column('iso_version', sa.String(20), nullable=False, server_default='18013-1:2018'))
     
     # Add biometric and security fields
     op.add_column('license', sa.Column('biometric_template', sa.Text, nullable=True))
