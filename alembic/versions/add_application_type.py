@@ -1,7 +1,7 @@
 """Add application type and previous license fields
 
 Revision ID: add_application_type
-Revises: 
+Revises: 006_add_iso_compliance_fields
 Create Date: 2024-01-01 00:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = 'add_application_type'
-down_revision = None
+down_revision = '006_add_iso_compliance_fields'
 branch_labels = None
 depends_on = None
 
