@@ -19,12 +19,18 @@ class CRUDCitizen(CRUDBase[Citizen, CitizenCreate, CitizenUpdate]):
         return db.query(Citizen).filter(Citizen.id_number == id_number).first()
 
     def search_by_name(
-        self, db: Session, *, first_name: str = None, last_name: str = None, skip: int = 0, limit: int = 100
+        self, db: Session, *, first_name: str = None, last_name: str = None, 
+        skip: int = 0, limit: int = 100, include_inactive: bool = False
     ) -> List[Citizen]:
         """
-        Search citizens by first name and/or last name.
+        Search citizens by first name and/or last name. By default only searches active citizens.
         """
         query = db.query(Citizen)
+        
+        # Filter by active status unless explicitly including inactive
+        if not include_inactive:
+            query = query.filter(Citizen.is_active == True)
+            
         if first_name:
             query = query.filter(Citizen.first_name.ilike(f"%{first_name}%"))
         if last_name:
@@ -139,6 +145,18 @@ class CRUDCitizen(CRUDBase[Citizen, CitizenCreate, CitizenUpdate]):
         }
         
         return self.update(db, db_obj=citizen_obj, obj_in=update_data)
+
+    def get_active_citizens(self, db: Session, *, skip: int = 0, limit: int = 100) -> List[Citizen]:
+        """
+        Get all active citizens (is_active = True)
+        """
+        return (
+            db.query(self.model)
+            .filter(Citizen.is_active == True)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
 
 citizen = CRUDCitizen(Citizen) 

@@ -20,12 +20,22 @@ def read_citizens(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
+    include_inactive: bool = Query(False, description="Include inactive citizens (admin only)"),
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Retrieve citizens.
+    Retrieve citizens. By default only returns active citizens.
     """
-    citizens = crud.citizen.get_multi(db, skip=skip, limit=limit)
+    if include_inactive and not (current_user.is_superuser or current_user.is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can view inactive citizens",
+        )
+    
+    if include_inactive:
+        citizens = crud.citizen.get_multi(db, skip=skip, limit=limit)
+    else:
+        citizens = crud.citizen.get_active_citizens(db, skip=skip, limit=limit)
     
     # Log action
     crud.audit_log.create(
@@ -34,7 +44,7 @@ def read_citizens(
             "user_id": current_user.id,
             "action_type": ActionType.READ,
             "resource_type": ResourceType.CITIZEN,
-            "description": f"User {current_user.username} retrieved list of citizens"
+            "description": f"User {current_user.username} retrieved list of {'all' if include_inactive else 'active'} citizens"
         }
     )
     
@@ -116,19 +126,31 @@ def search_citizens(
     last_name: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
+    include_inactive: bool = Query(False, description="Include inactive citizens (admin only)"),
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Search citizens by ID number or name.
+    Search citizens by ID number or name. By default only searches active citizens.
     """
+    if include_inactive and not (current_user.is_superuser or current_user.is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admin users can search inactive citizens",
+        )
+    
     # Search by ID number
     if id_number:
         citizen = crud.citizen.get_by_id_number(db, id_number=id_number)
-        results = [citizen] if citizen else []
+        # Filter out inactive citizens if not explicitly requested
+        if citizen and (citizen.is_active or include_inactive):
+            results = [citizen]
+        else:
+            results = []
     # Search by name
     elif first_name or last_name:
         results = crud.citizen.search_by_name(
-            db, first_name=first_name, last_name=last_name, skip=skip, limit=limit
+            db, first_name=first_name, last_name=last_name, 
+            skip=skip, limit=limit, include_inactive=include_inactive
         )
     else:
         results = []
@@ -143,7 +165,7 @@ def search_citizens(
             "user_id": current_user.id,
             "action_type": ActionType.READ,
             "resource_type": ResourceType.CITIZEN,
-            "description": f"User {current_user.username} searched citizens by {search_terms}"
+            "description": f"User {current_user.username} searched {'all' if include_inactive else 'active'} citizens by {search_terms}"
         }
     )
     
