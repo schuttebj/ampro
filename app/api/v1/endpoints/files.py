@@ -157,10 +157,9 @@ async def delete_file(
 @router.get("/serve/{file_path:path}")
 async def serve_file(
     file_path: str,
-    current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Serve a file from storage.
+    Serve a file from storage (public access for image display).
     """
     try:
         # Get full file path

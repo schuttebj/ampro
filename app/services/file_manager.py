@@ -151,10 +151,21 @@ class FileManager:
             raise ValueError("Photo URL is required")
         
         try:
-            # Check if this is already a local file URL
+            # Check if this is a local file URL (either static or API serve endpoint)
             if photo_url.startswith('/static/storage/'):
-                # Extract relative path from URL
+                # Extract relative path from static URL
                 relative_path = photo_url.replace('/static/storage/', '')
+                full_path = self.base_dir / relative_path
+                
+                if full_path.exists():
+                    # Read existing file content
+                    with open(full_path, 'rb') as f:
+                        content = f.read()
+                else:
+                    raise ValueError(f"Local file not found: {relative_path}")
+            elif photo_url.startswith('/api/v1/files/serve/'):
+                # Extract relative path from API serve URL
+                relative_path = photo_url.replace('/api/v1/files/serve/', '')
                 full_path = self.base_dir / relative_path
                 
                 if full_path.exists():
