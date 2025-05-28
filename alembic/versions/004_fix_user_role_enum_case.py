@@ -17,20 +17,15 @@ depends_on = None
 
 
 def upgrade():
-    # First, check what enum values currently exist and what we have in the database
-    # The error shows the enum expects: ADMIN, MANAGER, OFFICER, ..., VIEWER
-    # But our migration created: admin, manager, officer, printer, viewer
+    # First, convert the column from enum to string so we can update the values
+    op.execute("ALTER TABLE \"user\" ALTER COLUMN role TYPE varchar(20)")
     
-    # Let's first update any existing lowercase role values to uppercase
+    # Now update any existing lowercase role values to uppercase (now that it's a string column)
     op.execute("UPDATE \"user\" SET role = 'ADMIN' WHERE role = 'admin'")
     op.execute("UPDATE \"user\" SET role = 'MANAGER' WHERE role = 'manager'")
     op.execute("UPDATE \"user\" SET role = 'OFFICER' WHERE role = 'officer'")
     op.execute("UPDATE \"user\" SET role = 'PRINTER' WHERE role = 'printer'")
     op.execute("UPDATE \"user\" SET role = 'VIEWER' WHERE role = 'viewer'")
-    
-    # Now we need to recreate the userrole enum with uppercase values
-    # First, change the column back to string temporarily
-    op.execute("ALTER TABLE \"user\" ALTER COLUMN role TYPE varchar(20)")
     
     # Drop the existing enum type
     op.execute("DROP TYPE IF EXISTS userrole CASCADE")
