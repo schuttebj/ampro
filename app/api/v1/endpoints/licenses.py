@@ -1,4 +1,5 @@
 from typing import Any, List, Dict
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import FileResponse
@@ -22,6 +23,8 @@ from app.services.license_generator import (
 )
 from app.services.production_license_generator import production_generator
 from app.services.file_manager import file_manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
