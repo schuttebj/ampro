@@ -147,7 +147,11 @@ def upgrade():
     # Now alter the columns to use the enum types
     op.execute("ALTER TABLE printjob ALTER COLUMN status TYPE printjobstatus USING status::printjobstatus")
     op.execute("ALTER TABLE shippingrecord ALTER COLUMN status TYPE shippingstatus USING status::shippingstatus")
+    
+    # For user role column, we need to handle the default value carefully
+    op.execute("ALTER TABLE \"user\" ALTER COLUMN role DROP DEFAULT")
     op.execute("ALTER TABLE \"user\" ALTER COLUMN role TYPE userrole USING role::userrole")
+    op.execute("ALTER TABLE \"user\" ALTER COLUMN role SET DEFAULT 'officer'::userrole")
 
 
 def downgrade():
