@@ -30,18 +30,8 @@ def upgrade():
     # Update LicenseStatus enum to include new statuses
     op.execute("ALTER TYPE licensestatus ADD VALUE IF NOT EXISTS 'pending_collection'")
     
-    # Create enum types using SQLAlchemy's proper enum creation
-    printjob_status = postgresql.ENUM('queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled', name='printjobstatus')
-    shipping_status = postgresql.ENUM('pending', 'in_transit', 'delivered', 'failed', name='shippingstatus')
-    user_role = postgresql.ENUM('admin', 'manager', 'officer', 'printer', 'viewer', name='userrole')
-    
-    # Create the enum types (this will handle existence checking)
-    printjob_status.create(op.get_bind(), checkfirst=True)
-    shipping_status.create(op.get_bind(), checkfirst=True)
-    user_role.create(op.get_bind(), checkfirst=True)
-    
-    # Add role column to user table
-    op.add_column('user', sa.Column('role', user_role, nullable=False, server_default='officer'))
+    # Add role column to user table first (we'll create the enum type later)
+    op.add_column('user', sa.Column('role', sa.String(), nullable=False, server_default='officer'))
     
     # Update existing superusers to admin role
     op.execute("UPDATE \"user\" SET role = 'admin' WHERE is_superuser = true")
@@ -64,12 +54,12 @@ def upgrade():
     op.add_column('licenseapplication', sa.Column('collection_point', sa.String(), nullable=True))
     op.add_column('licenseapplication', sa.Column('preferred_collection_date', sa.Date(), nullable=True))
     
-    # Create printjob table
+    # Create printjob table with string status column initially
     op.create_table('printjob',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('application_id', sa.Integer(), nullable=False),
         sa.Column('license_id', sa.Integer(), nullable=False),
-        sa.Column('status', printjob_status, nullable=False),
+        sa.Column('status', sa.String(), nullable=False),
         sa.Column('priority', sa.Integer(), nullable=False),
         sa.Column('front_pdf_path', sa.String(), nullable=False),
         sa.Column('back_pdf_path', sa.String(), nullable=False),
@@ -94,13 +84,13 @@ def upgrade():
     )
     op.create_index(op.f('ix_printjob_id'), 'printjob', ['id'], unique=False)
     
-    # Create shippingrecord table
+    # Create shippingrecord table with string status column initially
     op.create_table('shippingrecord',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('application_id', sa.Integer(), nullable=False),
         sa.Column('license_id', sa.Integer(), nullable=False),
         sa.Column('print_job_id', sa.Integer(), nullable=False),
-        sa.Column('status', shipping_status, nullable=False),
+        sa.Column('status', sa.String(), nullable=False),
         sa.Column('tracking_number', sa.String(), nullable=True),
         sa.Column('collection_point', sa.String(), nullable=False),
         sa.Column('collection_address', sa.Text(), nullable=True),
@@ -122,6 +112,42 @@ def upgrade():
     )
     op.create_index(op.f('ix_shippingrecord_id'), 'shippingrecord', ['id'], unique=False)
     op.create_index(op.f('ix_shippingrecord_tracking_number'), 'shippingrecord', ['tracking_number'], unique=False)
+    
+    # Now create the enum types safely
+    op.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'printjobstatus') THEN
+                CREATE TYPE printjobstatus AS ENUM ('queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled');
+            END IF;
+        END
+        $$;
+    """)
+    
+    op.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'shippingstatus') THEN
+                CREATE TYPE shippingstatus AS ENUM ('pending', 'in_transit', 'delivered', 'failed');
+            END IF;
+        END
+        $$;
+    """)
+    
+    op.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userrole') THEN
+                CREATE TYPE userrole AS ENUM ('admin', 'manager', 'officer', 'printer', 'viewer');
+            END IF;
+        END
+        $$;
+    """)
+    
+    # Now alter the columns to use the enum types
+    op.execute("ALTER TABLE printjob ALTER COLUMN status TYPE printjobstatus USING status::printjobstatus")
+    op.execute("ALTER TABLE shippingrecord ALTER COLUMN status TYPE shippingstatus USING status::shippingstatus")
+    op.execute("ALTER TABLE \"user\" ALTER COLUMN role TYPE userrole USING role::userrole")
 
 
 def downgrade():
