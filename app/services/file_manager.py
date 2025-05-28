@@ -2,7 +2,7 @@ import os
 import io
 import hashlib
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Tuple, Dict, Any
 from pathlib import Path
 import requests
@@ -90,6 +90,52 @@ class FileManager:
         # Return relative path
         return str(file_path.relative_to(self.base_dir))
     
+    def store_uploaded_file(self, content: bytes, filename: str, category: str = "photo") -> Tuple[str, str]:
+        """
+        Store uploaded file content and return paths
+        
+        Args:
+            content: File content as bytes
+            filename: Original filename (used for extension)
+            category: Storage category (photo, temp, etc.)
+        
+        Returns:
+            Tuple of (relative_path, file_url)
+        """
+        try:
+            # Generate content hash for deduplication
+            content_hash = self._generate_file_hash(content)
+            
+            # Get file extension
+            file_extension = Path(filename).suffix.lower()
+            if not file_extension:
+                file_extension = ".jpg"  # Default extension
+            
+            # Generate unique filename with hash
+            unique_filename = f"upload_{content_hash}{file_extension}"
+            
+            # Get file path
+            file_path = self._get_file_path(category, unique_filename)
+            
+            # Check if file already exists (deduplication)
+            if file_path.exists():
+                logger.info(f"File already exists, reusing: {unique_filename}")
+            else:
+                # Write new file
+                with open(file_path, 'wb') as f:
+                    f.write(content)
+                logger.info(f"Stored new file: {unique_filename}")
+            
+            # Return relative path and URL
+            relative_path = str(file_path.relative_to(self.base_dir))
+            file_url = self.get_file_url(relative_path)
+            
+            return relative_path, file_url
+            
+        except Exception as e:
+            logger.error(f"Error storing uploaded file: {str(e)}")
+            raise
+    
     def download_and_store_photo(self, photo_url: str, citizen_id: int) -> Tuple[str, str]:
         """
         Download photo from URL and store both original and processed versions
@@ -105,19 +151,33 @@ class FileManager:
             raise ValueError("Photo URL is required")
         
         try:
-            # Download the image
-            response = requests.get(photo_url, timeout=30)
-            response.raise_for_status()
+            # Check if this is already a local file URL
+            if photo_url.startswith('/static/storage/'):
+                # Extract relative path from URL
+                relative_path = photo_url.replace('/static/storage/', '')
+                full_path = self.base_dir / relative_path
+                
+                if full_path.exists():
+                    # Read existing file content
+                    with open(full_path, 'rb') as f:
+                        content = f.read()
+                else:
+                    raise ValueError(f"Local file not found: {relative_path}")
+            else:
+                # Download from external URL
+                response = requests.get(photo_url, timeout=30)
+                response.raise_for_status()
+                content = response.content
             
             # Generate filename based on content hash
-            content_hash = self._generate_file_hash(response.content)
+            content_hash = self._generate_file_hash(content)
             original_filename = f"citizen_{citizen_id}_original_{content_hash}.jpg"
             processed_filename = f"citizen_{citizen_id}_processed_{content_hash}.jpg"
             
             # Save original image
             original_path = self._get_file_path("photo", original_filename)
             with open(original_path, 'wb') as f:
-                f.write(response.content)
+                f.write(content)
             
             # Process image for ISO compliance
             processed_path = self._get_file_path("photo", processed_filename)
@@ -134,52 +194,62 @@ class FileManager:
     
     def _process_photo_for_iso_compliance(self, input_path: Path, output_path: Path):
         """
-        Process photo to meet ISO specifications for driver's license
+        Process photo to meet ISO 18013 specifications
         
         Args:
             input_path: Path to input image
             output_path: Path to save processed image
         """
-        with Image.open(input_path) as img:
-            # Convert to RGB if necessary
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            
-            # Get target dimensions
-            target_width = ISO_PHOTO_SPECS["width_px"]
-            target_height = ISO_PHOTO_SPECS["height_px"]
-            
-            # Calculate crop dimensions to maintain aspect ratio
-            img_ratio = img.width / img.height
-            target_ratio = target_width / target_height
-            
-            if img_ratio > target_ratio:
-                # Image is wider than target, crop width
-                new_width = int(img.height * target_ratio)
-                left = (img.width - new_width) // 2
-                img = img.crop((left, 0, left + new_width, img.height))
-            else:
-                # Image is taller than target, crop height
-                new_height = int(img.width / target_ratio)
-                top = (img.height - new_height) // 2
-                img = img.crop((0, top, img.width, top + new_height))
-            
-            # Resize to exact specifications
-            img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
-            
-            # Apply subtle sharpening for license photo quality
-            img = img.filter(ImageFilter.UnsharpMask(radius=0.5, percent=50, threshold=3))
-            
-            # Enhance contrast slightly
-            img = ImageOps.autocontrast(img, cutoff=1)
-            
-            # Save with high quality
-            img.save(
-                output_path,
-                format=ISO_PHOTO_SPECS["format"],
-                quality=ISO_PHOTO_SPECS["quality"],
-                dpi=(ISO_PHOTO_SPECS["dpi"], ISO_PHOTO_SPECS["dpi"])
-            )
+        try:
+            with Image.open(input_path) as img:
+                # Convert to RGB if necessary
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Calculate aspect ratio
+                target_ratio = ISO_PHOTO_SPECS["width_px"] / ISO_PHOTO_SPECS["height_px"]
+                current_ratio = img.width / img.height
+                
+                # Crop to correct aspect ratio
+                if current_ratio > target_ratio:
+                    # Image is too wide, crop width
+                    new_width = int(img.height * target_ratio)
+                    left = (img.width - new_width) // 2
+                    img = img.crop((left, 0, left + new_width, img.height))
+                elif current_ratio < target_ratio:
+                    # Image is too tall, crop height
+                    new_height = int(img.width / target_ratio)
+                    top = (img.height - new_height) // 2
+                    img = img.crop((0, top, img.width, top + new_height))
+                
+                # Resize to exact ISO specifications
+                img = img.resize(
+                    (ISO_PHOTO_SPECS["width_px"], ISO_PHOTO_SPECS["height_px"]),
+                    Image.Resampling.LANCZOS
+                )
+                
+                # Apply subtle sharpening
+                img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
+                
+                # Ensure white background if image has transparency
+                if img.mode in ('RGBA', 'LA'):
+                    background = Image.new('RGB', img.size, ISO_PHOTO_SPECS["background_color"])
+                    if img.mode == 'RGBA':
+                        background.paste(img, mask=img.split()[-1])
+                    else:
+                        background.paste(img, mask=img.split()[-1])
+                    img = background
+                
+                # Save with high quality
+                img.save(
+                    output_path,
+                    format=ISO_PHOTO_SPECS["format"],
+                    quality=ISO_PHOTO_SPECS["quality"],
+                    dpi=(ISO_PHOTO_SPECS["dpi"], ISO_PHOTO_SPECS["dpi"])
+                )
+        except Exception as e:
+            logger.error(f"Error processing photo for ISO compliance: {str(e)}")
+            raise
     
     def cleanup_old_files(self, citizen_id: int, exclude_paths: list = None):
         """
@@ -201,6 +271,35 @@ class FileManager:
                     logger.info(f"Cleaned up old photo: {photo_file}")
                 except Exception as e:
                     logger.error(f"Error cleaning up {photo_file}: {str(e)}")
+    
+    def cleanup_citizen_files(self, citizen_id: int, keep_latest: bool = True):
+        """
+        Clean up all files for a citizen, optionally keeping the latest ones
+        
+        Args:
+            citizen_id: Citizen ID
+            keep_latest: Whether to keep the most recent files
+        """
+        try:
+            photo_pattern = f"citizen_{citizen_id}_*"
+            photo_files = list(self.photos_dir.glob(photo_pattern))
+            
+            if keep_latest and photo_files:
+                # Sort by modification time and keep the latest
+                photo_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+                files_to_delete = photo_files[2:]  # Keep latest original and processed
+            else:
+                files_to_delete = photo_files
+            
+            for photo_file in files_to_delete:
+                try:
+                    photo_file.unlink()
+                    logger.info(f"Cleaned up citizen file: {photo_file}")
+                except Exception as e:
+                    logger.error(f"Error cleaning up {photo_file}: {str(e)}")
+                    
+        except Exception as e:
+            logger.error(f"Error during citizen file cleanup: {str(e)}")
     
     def cleanup_old_license_files(self, license_id: int, exclude_paths: list = None):
         """
@@ -272,17 +371,23 @@ class FileManager:
         Clean up temporary files older than specified hours
         
         Args:
-            older_than_hours: Remove files older than this many hours
+            older_than_hours: Files older than this will be deleted
         """
-        cutoff_time = datetime.now().timestamp() - (older_than_hours * 3600)
-        
-        for temp_file in self.temp_dir.glob("*"):
-            if temp_file.is_file() and temp_file.stat().st_mtime < cutoff_time:
-                try:
-                    temp_file.unlink()
-                    logger.info(f"Cleaned up temp file: {temp_file}")
-                except Exception as e:
-                    logger.error(f"Error cleaning up temp file {temp_file}: {str(e)}")
+        try:
+            cutoff_time = datetime.now() - timedelta(hours=older_than_hours)
+            
+            for temp_file in self.temp_dir.glob("*"):
+                if temp_file.is_file():
+                    file_time = datetime.fromtimestamp(temp_file.stat().st_mtime)
+                    if file_time < cutoff_time:
+                        try:
+                            temp_file.unlink()
+                            logger.info(f"Cleaned up temp file: {temp_file}")
+                        except Exception as e:
+                            logger.error(f"Error cleaning up {temp_file}: {str(e)}")
+                            
+        except Exception as e:
+            logger.error(f"Error during temp file cleanup: {str(e)}")
     
     def get_storage_stats(self) -> Dict[str, Any]:
         """Get storage statistics"""
@@ -310,7 +415,6 @@ class FileManager:
                         stats[f"{prefix}_size_bytes"] += size
         
         return stats
-
 
 # Global file manager instance
 file_manager = FileManager() 

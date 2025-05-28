@@ -1,5 +1,5 @@
 from typing import Optional, List, TYPE_CHECKING, ForwardRef
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel, EmailStr, Field
 
 from app.models.citizen import Gender, MaritalStatus
@@ -36,6 +36,8 @@ class CitizenBase(BaseModel):
     # Additional information
     birth_place: Optional[str] = None
     nationality: Optional[str] = None
+    
+    # Photo management
     photo_url: Optional[str] = None
 
 
@@ -52,18 +54,23 @@ class CitizenCreate(CitizenBase):
 
 class CitizenUpdate(CitizenBase):
     """
-    Schema for updating an existing citizen.
+    Schema for updating a citizen.
     """
     pass
 
 
 class CitizenInDBBase(CitizenBase):
     """
-    Base schema for citizen in DB with ID.
+    Base schema for citizen in database.
     """
     id: int
-    is_active: bool
-
+    
+    # Photo management fields
+    stored_photo_path: Optional[str] = None
+    processed_photo_path: Optional[str] = None
+    photo_uploaded_at: Optional[datetime] = None
+    photo_processed_at: Optional[datetime] = None
+    
     class Config:
         from_attributes = True
 
@@ -71,6 +78,13 @@ class CitizenInDBBase(CitizenBase):
 class Citizen(CitizenInDBBase):
     """
     Schema for returning citizen information.
+    """
+    pass
+
+
+class CitizenInDB(CitizenInDBBase):
+    """
+    Schema for citizen stored in database.
     """
     pass
 

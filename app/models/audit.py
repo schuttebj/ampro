@@ -23,6 +23,7 @@ class ResourceType(str, enum.Enum):
     CITIZEN = "citizen"
     LICENSE = "license"
     APPLICATION = "application"
+    FILE = "file"
     SYSTEM = "system"
 
 

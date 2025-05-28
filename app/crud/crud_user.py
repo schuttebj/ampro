@@ -35,6 +35,7 @@ class CRUDUser(CRUDBase[User, UserCreate, UserUpdate]):
             full_name=obj_in.full_name,
             is_superuser=obj_in.is_superuser,
             is_active=obj_in.is_active,
+            role=obj_in.role,
             department=obj_in.department,
         )
         db.add(db_obj)

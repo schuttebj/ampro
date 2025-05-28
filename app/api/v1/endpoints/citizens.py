@@ -1,6 +1,6 @@
 from typing import Any, List, Optional, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.core.security import get_current_active_user
 from app.models.audit import ActionType, ResourceType
 from app.models.user import User
 from app.schemas.citizen import Citizen, CitizenCreate, CitizenUpdate
+from app.services.file_manager import file_manager
 
 router = APIRouter()
 
@@ -45,6 +46,7 @@ def create_citizen(
     *,
     db: Session = Depends(get_db),
     citizen_in: CitizenCreate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
@@ -60,6 +62,35 @@ def create_citizen(
     
     # Create citizen
     citizen = crud.citizen.create(db, obj_in=citizen_in)
+    
+    # Handle photo processing if photo URL provided
+    if hasattr(citizen_in, 'photo_url') and citizen_in.photo_url:
+        try:
+            # Download and process photo
+            original_path, processed_path = file_manager.download_and_store_photo(
+                citizen_in.photo_url, citizen.id
+            )
+            
+            # Update citizen with photo paths
+            crud.citizen.update_photo_paths(
+                db,
+                citizen_id=citizen.id,
+                stored_photo_path=original_path,
+                processed_photo_path=processed_path
+            )
+            
+        except Exception as e:
+            # Log the error but don't fail the creation
+            crud.audit_log.create(
+                db,
+                obj_in={
+                    "user_id": current_user.id,
+                    "action_type": ActionType.CREATE,
+                    "resource_type": ResourceType.CITIZEN,
+                    "resource_id": str(citizen.id),
+                    "description": f"Photo processing failed for new citizen {citizen.first_name} {citizen.last_name}: {str(e)}"
+                }
+            )
     
     # Log action
     crud.audit_log.create(
@@ -157,6 +188,7 @@ def update_citizen(
     db: Session = Depends(get_db),
     citizen_id: int,
     citizen_in: CitizenUpdate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
@@ -172,8 +204,58 @@ def update_citizen(
     # Log old values
     old_values = jsonable_encoder(citizen)
     
+    # Check if photo URL is being updated
+    photo_url_changed = False
+    new_photo_url = None
+    
+    if hasattr(citizen_in, 'photo_url') and citizen_in.photo_url is not None:
+        if citizen_in.photo_url != citizen.photo_url:
+            photo_url_changed = True
+            new_photo_url = citizen_in.photo_url
+    
     # Update citizen
     citizen = crud.citizen.update(db, db_obj=citizen, obj_in=citizen_in)
+    
+    # Handle photo processing if photo URL changed
+    if photo_url_changed and new_photo_url:
+        try:
+            # Store old photo paths for cleanup
+            old_stored_path = citizen.stored_photo_path
+            old_processed_path = citizen.processed_photo_path
+            
+            # Download and process new photo
+            original_path, processed_path = file_manager.download_and_store_photo(
+                new_photo_url, citizen_id
+            )
+            
+            # Update citizen with new photo paths
+            crud.citizen.update_photo_paths(
+                db,
+                citizen_id=citizen_id,
+                stored_photo_path=original_path,
+                processed_photo_path=processed_path
+            )
+            
+            # Clean up old files in background
+            if old_stored_path or old_processed_path:
+                background_tasks.add_task(
+                    file_manager.cleanup_old_files, 
+                    citizen_id, 
+                    exclude_paths=[original_path, processed_path]
+                )
+                
+        except Exception as e:
+            # Log the error but don't fail the update
+            crud.audit_log.create(
+                db,
+                obj_in={
+                    "user_id": current_user.id,
+                    "action_type": ActionType.UPDATE,
+                    "resource_type": ResourceType.CITIZEN,
+                    "resource_id": str(citizen.id),
+                    "description": f"Photo processing failed for citizen {citizen.first_name} {citizen.last_name}: {str(e)}"
+                }
+            )
     
     # Log action
     crud.audit_log.create(
@@ -246,6 +328,9 @@ def delete_citizen(
             detail="Citizen not found",
         )
     
+    # Clean up citizen files before deletion
+    file_manager.cleanup_citizen_files(citizen_id, keep_latest=False)
+    
     # Soft delete citizen
     citizen = crud.citizen.soft_delete(db, id=citizen_id)
     
@@ -261,4 +346,169 @@ def delete_citizen(
         }
     )
     
-    return citizen 
+    return citizen
+
+
+@router.post("/{citizen_id}/photo/update", response_model=Dict[str, Any])
+def update_citizen_photo(
+    *,
+    db: Session = Depends(get_db),
+    citizen_id: int,
+    photo_url: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Update citizen photo from uploaded file URL and process for ISO compliance.
+    """
+    citizen = crud.citizen.get(db, id=citizen_id)
+    if not citizen:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Citizen not found",
+        )
+    
+    try:
+        # Store old photo paths for cleanup
+        old_stored_path = citizen.stored_photo_path
+        old_processed_path = citizen.processed_photo_path
+        
+        # Update photo URL in database
+        crud.citizen.update(db, db_obj=citizen, obj_in={"photo_url": photo_url})
+        
+        # Download and process new photo
+        original_path, processed_path = file_manager.download_and_store_photo(
+            photo_url, citizen_id
+        )
+        
+        # Update citizen with new photo paths
+        crud.citizen.update_photo_paths(
+            db,
+            citizen_id=citizen_id,
+            stored_photo_path=original_path,
+            processed_photo_path=processed_path
+        )
+        
+        # Clean up old files in background
+        if old_stored_path or old_processed_path:
+            background_tasks.add_task(
+                file_manager.cleanup_old_files, 
+                citizen_id, 
+                exclude_paths=[original_path, processed_path]
+            )
+        
+        # Log action
+        crud.audit_log.create(
+            db,
+            obj_in={
+                "user_id": current_user.id,
+                "action_type": ActionType.UPDATE,
+                "resource_type": ResourceType.CITIZEN,
+                "resource_id": str(citizen.id),
+                "description": f"User {current_user.username} updated photo for citizen {citizen.first_name} {citizen.last_name}"
+            }
+        )
+        
+        return {
+            "message": "Photo updated successfully",
+            "citizen_id": citizen_id,
+            "original_photo_path": original_path,
+            "processed_photo_path": processed_path,
+            "photo_url": photo_url
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating photo: {str(e)}"
+        )
+
+
+@router.delete("/{citizen_id}/photo", response_model=Dict[str, str])
+def delete_citizen_photo(
+    *,
+    db: Session = Depends(get_db),
+    citizen_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Delete citizen photo and clean up files.
+    """
+    citizen = crud.citizen.get(db, id=citizen_id)
+    if not citizen:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Citizen not found",
+        )
+    
+    try:
+        # Clear photo data in database
+        crud.citizen.clear_photo_data(db, citizen_id=citizen_id)
+        
+        # Clean up all photo files in background
+        background_tasks.add_task(file_manager.cleanup_citizen_files, citizen_id, keep_latest=False)
+        
+        # Log action
+        crud.audit_log.create(
+            db,
+            obj_in={
+                "user_id": current_user.id,
+                "action_type": ActionType.DELETE,
+                "resource_type": ResourceType.CITIZEN,
+                "resource_id": str(citizen.id),
+                "description": f"User {current_user.username} deleted photo for citizen {citizen.first_name} {citizen.last_name}"
+            }
+        )
+        
+        return {
+            "message": "Photo deleted successfully",
+            "citizen_id": str(citizen_id)
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting photo: {str(e)}"
+        )
+
+
+@router.get("/{citizen_id}/photo/status", response_model=Dict[str, Any])
+def get_citizen_photo_status(
+    *,
+    db: Session = Depends(get_db),
+    citizen_id: int,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get citizen photo processing status and file information.
+    """
+    citizen = crud.citizen.get(db, id=citizen_id)
+    if not citizen:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Citizen not found",
+        )
+    
+    # Check file existence
+    original_exists = False
+    processed_exists = False
+    
+    if citizen.stored_photo_path:
+        original_exists = file_manager.file_exists(citizen.stored_photo_path)
+    
+    if citizen.processed_photo_path:
+        processed_exists = file_manager.file_exists(citizen.processed_photo_path)
+    
+    return {
+        "citizen_id": citizen_id,
+        "has_photo_url": bool(citizen.photo_url),
+        "photo_url": citizen.photo_url,
+        "stored_photo_path": citizen.stored_photo_path,
+        "processed_photo_path": citizen.processed_photo_path,
+        "original_file_exists": original_exists,
+        "processed_file_exists": processed_exists,
+        "photo_uploaded_at": citizen.photo_uploaded_at,
+        "photo_processed_at": citizen.photo_processed_at,
+        "needs_processing": bool(citizen.photo_url and not processed_exists)
+    } 

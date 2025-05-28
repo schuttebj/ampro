@@ -1,6 +1,8 @@
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field
 
+from app.models.user import UserRole
+
 
 class UserBase(BaseModel):
     """
@@ -11,6 +13,7 @@ class UserBase(BaseModel):
     full_name: Optional[str] = None
     is_active: Optional[bool] = True
     is_superuser: Optional[bool] = False
+    role: Optional[UserRole] = UserRole.OFFICER
     department: Optional[str] = None
 
 

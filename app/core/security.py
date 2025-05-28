@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, List
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.token import TokenPayload
 
 # Password hashing
@@ -93,5 +93,52 @@ async def get_current_active_superuser(current_user: User = Depends(get_current_
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions",
+        )
+    return current_user
+
+# Role-based access control functions
+def require_roles(allowed_roles: List[UserRole]):
+    """
+    Dependency factory for role-based access control.
+    """
+    async def check_role(current_user: User = Depends(get_current_active_user)) -> User:
+        if current_user.is_superuser or current_user.role in allowed_roles:
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied. Required roles: {[role.value for role in allowed_roles]}",
+        )
+    return check_role
+
+async def get_current_printer_user(current_user: User = Depends(get_current_active_user)) -> User:
+    """
+    Get the current active printer user.
+    """
+    if not (current_user.role == UserRole.PRINTER or current_user.is_superuser):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Printer access required",
+        )
+    return current_user
+
+async def get_current_manager_user(current_user: User = Depends(get_current_active_user)) -> User:
+    """
+    Get the current active manager user.
+    """
+    if not (current_user.role in [UserRole.MANAGER, UserRole.ADMIN] or current_user.is_superuser):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager access required",
+        )
+    return current_user
+
+async def get_current_officer_user(current_user: User = Depends(get_current_active_user)) -> User:
+    """
+    Get the current active officer user (can process applications).
+    """
+    if not (current_user.role in [UserRole.OFFICER, UserRole.MANAGER, UserRole.ADMIN] or current_user.is_superuser):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Officer access required",
         )
     return current_user 
