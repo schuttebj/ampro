@@ -65,6 +65,12 @@ def init_db(db: Session) -> None:
             )
             crud.user.create(db, obj_in=user_in)
             logger.info(f"Regular user created with password: {user_password}")
+    except LookupError as e:
+        # This happens when there's an enum value mismatch (e.g., 'admin' vs 'ADMIN')
+        logger.warning(f"Enum value mismatch detected: {str(e)}")
+        logger.warning("This usually means migrations need to run first: alembic upgrade head")
+        logger.warning("Skipping database initialization - migrations will handle data migration")
+        return
     except sqlalchemy.exc.ProgrammingError as e:
         # If tables don't exist yet, just log a warning and return
         logger.warning(f"Could not initialize database: {str(e)}")
