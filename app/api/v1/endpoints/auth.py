@@ -58,6 +58,14 @@ def login_access_token(
     return {"access_token": token, "token_type": "bearer"}
 
 
+@router.options("/login")
+def login_options() -> dict:
+    """
+    Handle OPTIONS requests for the login endpoint.
+    """
+    return {"detail": "OK"}
+
+
 @router.post("/test-token", response_model=UserSchema)
 def test_token(current_user: User = Depends(get_current_active_user)) -> Any:
     """

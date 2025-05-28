@@ -27,13 +27,19 @@ app = FastAPI(
     redoc_url=f"{settings.API_V1_PREFIX}/redoc",
 )
 
+# Log CORS settings during startup
+logger.info(f"Configuring CORS with origins: {settings.BACKEND_CORS_ORIGINS}")
+
 # Set all CORS enabled origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origin_regex="https://.*\.vercel\.app",  # Also allow all Vercel domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Type", "Authorization"],
+    max_age=600,  # Cache preflight requests for 10 minutes
 )
 
 # Include API router
@@ -89,6 +95,14 @@ async def health_check():
         "api_version": "0.1.0",
         "environment": settings.ENVIRONMENT,
     }
+
+# Add an OPTIONS handler for the auth/login endpoint to respond to preflight requests
+@app.options("/api/v1/auth/login")
+async def auth_login_options():
+    """
+    Handle OPTIONS requests for auth/login endpoint.
+    """
+    return {"detail": "OK"}
 
 @app.get("/protected")
 async def protected_route(current_user = Depends(get_current_active_user)):

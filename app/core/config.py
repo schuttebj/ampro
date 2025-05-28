@@ -13,7 +13,15 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
     # CORS Configuration
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
+    # Default to allow common development and production URLs if not specified in environment
+    BACKEND_CORS_ORIGINS: List[str] = [
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "https://ampro-platform.vercel.app",
+        "https://ampro-licence.onrender.com",
+        "*"  # Allow all origins by default for development
+    ]
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
