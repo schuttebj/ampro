@@ -16,6 +16,7 @@ class ActionType(str, enum.Enum):
     PRINT = "PRINT"
     EXPORT = "EXPORT"
     VERIFY = "VERIFY"
+    GENERATE = "GENERATE"
 
 
 class ResourceType(str, enum.Enum):
@@ -23,6 +24,7 @@ class ResourceType(str, enum.Enum):
     CITIZEN = "CITIZEN"
     LICENSE = "LICENSE"
     APPLICATION = "APPLICATION"
+    LOCATION = "LOCATION"
     FILE = "FILE"
     SYSTEM = "SYSTEM"
 

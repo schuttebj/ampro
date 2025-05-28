@@ -9,6 +9,9 @@ from app.models.base import Base
 from app.core.config import settings
 from app.schemas.user import UserCreate
 
+# Import all models to ensure they are registered with SQLAlchemy
+from app.models import *  # noqa: F401, F403
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
