@@ -67,7 +67,7 @@ def read_applications(
                 or_(
                     CitizenModel.first_name.ilike(name_search),
                     CitizenModel.last_name.ilike(name_search),
-                    text(f"CONCAT(citizens.first_name, ' ', citizens.last_name) ILIKE '{name_search}'")
+                    text(f"CONCAT(citizen.first_name, ' ', citizen.last_name) ILIKE '{name_search}'")
                 )
             )
     
