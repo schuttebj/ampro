@@ -8,11 +8,11 @@ class UserRole(str, enum.Enum):
     """
     User roles for role-based access control.
     """
-    ADMIN = "admin"           # Full system access (equivalent to is_superuser=True)
-    MANAGER = "manager"       # Department management, user oversight
-    OFFICER = "officer"       # License processing, application review
-    PRINTER = "printer"       # Print job processing only
-    VIEWER = "viewer"         # Read-only access
+    ADMIN = "ADMIN"           # Full system access (equivalent to is_superuser=True)
+    MANAGER = "MANAGER"       # Department management, user oversight
+    OFFICER = "OFFICER"       # License processing, application review
+    PRINTER = "PRINTER"       # Print job processing only
+    VIEWER = "VIEWER"         # Read-only access
 
 
 class User(BaseModel):
