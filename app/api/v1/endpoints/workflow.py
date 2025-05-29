@@ -192,6 +192,7 @@ def generate_iso_compliant_license_and_queue_print(db: Session, license_id: int,
             print_job_data = {
                 "application_id": application_id,
                 "license_id": license_id,
+                "status": "queued",  # Explicitly set to lowercase to match database enum
                 "front_pdf_path": result["files"]["front_pdf_path"],
                 "back_pdf_path": result["files"]["back_pdf_path"],
                 "combined_pdf_path": result["files"]["combined_pdf_path"],
@@ -1216,6 +1217,7 @@ def manually_create_print_job(
     print_job_data = {
         "application_id": application_id,
         "license_id": license.id,
+        "status": "queued",  # Explicitly set to lowercase to match database enum
         "front_pdf_path": mock_file_paths["front_pdf_path"],
         "back_pdf_path": mock_file_paths["back_pdf_path"],
         "combined_pdf_path": mock_file_paths["combined_pdf_path"],
@@ -1293,6 +1295,7 @@ def create_test_print_job(
     print_job_data = {
         "application_id": test_app.id,
         "license_id": license.id,
+        "status": "queued",  # Explicitly set to lowercase to match database enum
         "front_pdf_path": f"/tmp/test_licenses/TEST_{license.license_number}_front.pdf",
         "back_pdf_path": f"/tmp/test_licenses/TEST_{license.license_number}_back.pdf",
         "combined_pdf_path": f"/tmp/test_licenses/TEST_{license.license_number}_combined.pdf",
