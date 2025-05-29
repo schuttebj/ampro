@@ -18,7 +18,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     
     def get_queue(self, db: Session, *, skip: int = 0, limit: int = 100) -> List[PrintJob]:
         """Get print jobs in queue ordered by priority and queue time."""
-        # Always use lowercase string values to match database enum
+        # Always use lowercase string values to match database enum (deployment trigger)
         try:
             return (
                 db.query(PrintJob)
