@@ -1213,18 +1213,28 @@ def manually_create_print_job(
         "combined_pdf_path": f"/tmp/licenses/{license_number}_combined.pdf"
     }
     
-    # Create print job
-    print_job_data = {
-        "application_id": application_id,
-        "license_id": license.id,
-        "status": "queued",  # Explicitly set to lowercase to match database enum
-        "front_pdf_path": mock_file_paths["front_pdf_path"],
-        "back_pdf_path": mock_file_paths["back_pdf_path"],
-        "combined_pdf_path": mock_file_paths["combined_pdf_path"],
-        "priority": 1
-    }
+    # Create print job - bypass schema validation to ensure lowercase status
+    from datetime import datetime
+    from app.models.license import PrintJob as PrintJobModel
     
-    print_job = crud.print_job.create(db, obj_in=print_job_data)
+    print_job = PrintJobModel(
+        application_id=application_id,
+        license_id=license.id,
+        status="queued",  # Direct string assignment to bypass enum conversion
+        priority=1,
+        front_pdf_path=mock_file_paths["front_pdf_path"],
+        back_pdf_path=mock_file_paths["back_pdf_path"],
+        combined_pdf_path=mock_file_paths["combined_pdf_path"],
+        queued_at=datetime.utcnow(),
+        copies_printed=1,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+        is_active=True
+    )
+    
+    db.add(print_job)
+    db.commit()
+    db.refresh(print_job)
     
     # Update application status to queued for printing
     crud.license_application.update(
@@ -1291,18 +1301,28 @@ def create_test_print_job(
     license = crud.license.get(db, id=test_app.approved_license_id)
     citizen = crud.citizen.get(db, id=test_app.citizen_id)
     
-    # Create test print job
-    print_job_data = {
-        "application_id": test_app.id,
-        "license_id": license.id,
-        "status": "queued",  # Explicitly set to lowercase to match database enum
-        "front_pdf_path": f"/tmp/test_licenses/TEST_{license.license_number}_front.pdf",
-        "back_pdf_path": f"/tmp/test_licenses/TEST_{license.license_number}_back.pdf",
-        "combined_pdf_path": f"/tmp/test_licenses/TEST_{license.license_number}_combined.pdf",
-        "priority": 2  # High priority for test
-    }
+    # Create test print job - bypass schema validation to ensure lowercase status
+    from datetime import datetime
+    from app.models.license import PrintJob as PrintJobModel
     
-    print_job = crud.print_job.create(db, obj_in=print_job_data)
+    print_job = PrintJobModel(
+        application_id=test_app.id,
+        license_id=license.id,
+        status="queued",  # Direct string assignment to bypass enum conversion
+        priority=2,  # High priority for test
+        front_pdf_path=f"/tmp/test_licenses/TEST_{license.license_number}_front.pdf",
+        back_pdf_path=f"/tmp/test_licenses/TEST_{license.license_number}_back.pdf",
+        combined_pdf_path=f"/tmp/test_licenses/TEST_{license.license_number}_combined.pdf",
+        queued_at=datetime.utcnow(),
+        copies_printed=1,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+        is_active=True
+    )
+    
+    db.add(print_job)
+    db.commit()
+    db.refresh(print_job)
     
     # Update application status
     crud.license_application.update(
