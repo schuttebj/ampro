@@ -101,7 +101,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
         
         stats = {}
         for status in PrintJobStatus:
-            count = db.query(func.count(PrintJob.id)).filter(PrintJob.status == status).scalar()
+            count = db.query(func.count(PrintJob.id)).filter(PrintJob.status == status.value).scalar()
             stats[status.value] = count
         
         return stats
@@ -141,10 +141,10 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
     def ship_record(self, db: Session, *, shipping_id: int, user_id: int, tracking_number: str = None, shipping_method: str = None) -> Optional[ShippingRecord]:
         """Mark a shipping record as shipped."""
         shipping_record = self.get(db, id=shipping_id)
-        if shipping_record and shipping_record.status == ShippingStatus.PENDING:
+        if shipping_record and shipping_record.status == ShippingStatus.PENDING.value:
             from datetime import datetime
             update_data = {
-                "status": ShippingStatus.IN_TRANSIT,
+                "status": ShippingStatus.IN_TRANSIT.value,
                 "shipped_at": datetime.utcnow(),
                 "shipped_by_user_id": user_id,
                 "tracking_number": tracking_number,
@@ -156,10 +156,10 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
     def deliver_record(self, db: Session, *, shipping_id: int, user_id: int, notes: str = None) -> Optional[ShippingRecord]:
         """Mark a shipping record as delivered."""
         shipping_record = self.get(db, id=shipping_id)
-        if shipping_record and shipping_record.status == ShippingStatus.IN_TRANSIT:
+        if shipping_record and shipping_record.status == ShippingStatus.IN_TRANSIT.value:
             from datetime import datetime
             update_data = {
-                "status": ShippingStatus.DELIVERED,
+                "status": ShippingStatus.DELIVERED.value,
                 "delivered_at": datetime.utcnow(),
                 "received_by_user_id": user_id,
                 "shipping_notes": notes
@@ -173,7 +173,7 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
         
         stats = {}
         for status in ShippingStatus:
-            count = db.query(func.count(ShippingRecord.id)).filter(ShippingRecord.status == status).scalar()
+            count = db.query(func.count(ShippingRecord.id)).filter(ShippingRecord.status == status.value).scalar()
             stats[status.value] = count
         
         return stats

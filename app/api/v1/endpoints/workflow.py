@@ -722,7 +722,7 @@ def get_ready_for_collection(
         db.query(crud.license_application.model)
         .filter(
             and_(
-                crud.license_application.model.status == ApplicationStatus.READY_FOR_COLLECTION,
+                crud.license_application.model.status == ApplicationStatus.READY_FOR_COLLECTION.value,
                 crud.license_application.model.collection_point == collection_point
             )
         )

@@ -249,8 +249,8 @@ def update_application(
         )
     
     # If the status is changing to APPROVED, set the reviewer
-    if (application_in.status == ApplicationStatus.APPROVED and
-        application.status != ApplicationStatus.APPROVED):
+    if (application_in.status == ApplicationStatus.APPROVED.value and
+        application.status != ApplicationStatus.APPROVED.value):
         application_in.reviewed_by = current_user.id
         application_in.review_date = "now()"  # SQLAlchemy will convert this
     
@@ -290,7 +290,7 @@ def approve_application(
         )
     
     # Check if already approved
-    if application.status == ApplicationStatus.APPROVED:
+    if application.status == ApplicationStatus.APPROVED.value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Application already approved",

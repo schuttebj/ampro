@@ -177,7 +177,7 @@ class CRUDLicenseApplication(CRUDBase[LicenseApplication, LicenseApplicationCrea
         Get all applications pending review.
         """
         return (db.query(LicenseApplication)
-                .filter(LicenseApplication.status == ApplicationStatus.SUBMITTED)
+                .filter(LicenseApplication.status == ApplicationStatus.SUBMITTED.value)
                 .offset(skip).limit(limit).all())
 
 
