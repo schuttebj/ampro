@@ -40,7 +40,16 @@ def read_applications(
     
     # Filter by specific application ID
     if id is not None:
-        query = query.filter(LicenseApplicationModel.id == id)
+        # First try exact application ID match
+        app_by_id = query.filter(LicenseApplicationModel.id == id).first()
+        if app_by_id:
+            # If found by application ID, return just that one
+            return [app_by_id]
+        else:
+            # If not found by application ID, treat the ID as a potential citizen search
+            # and continue with citizen search logic below
+            if not citizen_search:
+                citizen_search = str(id)
     
     # Filter by status
     if status:
@@ -51,25 +60,31 @@ def read_applications(
             # Invalid status, ignore this filter
             pass
     
-    # Filter by citizen search (name or ID number)
+    # Filter by citizen search (name, ID number, or application ID if not found above)
     if citizen_search:
-        # Join with citizen table for name search
+        # Join with citizen table for name and ID search
         query = query.join(CitizenModel, LicenseApplicationModel.citizen_id == CitizenModel.id)
         
-        # Search by citizen ID number or name
+        # Create search conditions
+        search_conditions = []
+        
+        # If it's numeric, search by citizen ID number and database citizen ID
         if citizen_search.isdigit():
-            # Search by citizen ID number
-            query = query.filter(CitizenModel.id_number.ilike(f"%{citizen_search}%"))
+            # Search by citizen ID number (the ID on their card/document)
+            search_conditions.append(CitizenModel.id_number.ilike(f"%{citizen_search}%"))
+            # Also search by citizen database ID
+            search_conditions.append(CitizenModel.id == int(citizen_search))
         else:
             # Search by citizen name (first name or last name)
             name_search = f"%{citizen_search}%"
-            query = query.filter(
-                or_(
-                    CitizenModel.first_name.ilike(name_search),
-                    CitizenModel.last_name.ilike(name_search),
-                    text(f"CONCAT(citizen.first_name, ' ', citizen.last_name) ILIKE '{name_search}'")
-                )
-            )
+            search_conditions.extend([
+                CitizenModel.first_name.ilike(name_search),
+                CitizenModel.last_name.ilike(name_search),
+                text(f"CONCAT(citizen.first_name, ' ', citizen.last_name) ILIKE '{name_search}'")
+            ])
+        
+        # Apply OR condition for all search terms
+        query = query.filter(or_(*search_conditions))
     
     # Apply pagination
     applications = query.offset(skip).limit(limit).all()
@@ -81,7 +96,7 @@ def read_applications(
             "user_id": current_user.id,
             "action_type": ActionType.READ,
             "resource_type": ResourceType.APPLICATION,
-            "description": f"User {current_user.username} retrieved list of license applications with filters: status={status}, citizen_search={citizen_search}"
+            "description": f"User {current_user.username} retrieved list of license applications with filters: status={status}, id={id}, citizen_search={citizen_search}"
         }
     )
     
