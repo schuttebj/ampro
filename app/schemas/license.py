@@ -81,6 +81,7 @@ class LicenseApplicationBase(BaseModel):
     status: Optional[ApplicationStatus] = None
     application_type: Optional[ApplicationType] = ApplicationType.NEW
     previous_license_id: Optional[int] = None
+    location_id: Optional[int] = None
     application_date: Optional[datetime] = None
     documents_verified: Optional[bool] = False
     medical_verified: Optional[bool] = False
