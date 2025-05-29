@@ -18,14 +18,26 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     
     def get_queue(self, db: Session, *, skip: int = 0, limit: int = 100) -> List[PrintJob]:
         """Get print jobs in queue ordered by priority and queue time."""
-        return (
-            db.query(PrintJob)
-            .filter(PrintJob.status.in_(['queued', 'assigned']))
-            .order_by(PrintJob.priority.desc(), PrintJob.queued_at.asc())
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
+        try:
+            # Use enum objects directly for filtering
+            return (
+                db.query(PrintJob)
+                .filter(PrintJob.status.in_([PrintJobStatus.QUEUED, PrintJobStatus.ASSIGNED]))
+                .order_by(PrintJob.priority.desc(), PrintJob.queued_at.asc())
+                .offset(skip)
+                .limit(limit)
+                .all()
+            )
+        except Exception as e:
+            # Fallback to string comparison if enum fails
+            return (
+                db.query(PrintJob)
+                .filter(PrintJob.status.in_(['queued', 'assigned']))
+                .order_by(PrintJob.priority.desc(), PrintJob.queued_at.asc())
+                .offset(skip)
+                .limit(limit)
+                .all()
+            )
     
     def get_by_status(self, db: Session, *, status: PrintJobStatus, skip: int = 0, limit: int = 100) -> List[PrintJob]:
         """Get print jobs by status."""
@@ -112,6 +124,78 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
                 stats[status_value] = 0
         
         return stats
+
+    def get_by_assigned_user(self, db: Session, *, user_id: int, skip: int = 0, limit: int = 100) -> List[PrintJob]:
+        """Get print jobs assigned to a specific user."""
+        return (
+            db.query(PrintJob)
+            .filter(
+                and_(
+                    PrintJob.assigned_to_user_id == user_id,
+                    PrintJob.status.in_([PrintJobStatus.ASSIGNED, PrintJobStatus.PRINTING])
+                )
+            )
+            .order_by(PrintJob.assigned_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    
+    def get_printer_queue(self, db: Session, *, user_id: int, skip: int = 0, limit: int = 100) -> List[PrintJob]:
+        """Get print queue for a specific printer operator."""
+        return (
+            db.query(PrintJob)
+            .filter(
+                or_(
+                    and_(PrintJob.status == PrintJobStatus.QUEUED, PrintJob.assigned_to_user_id.is_(None)),
+                    PrintJob.assigned_to_user_id == user_id
+                )
+            )
+            .order_by(PrintJob.priority.desc(), PrintJob.queued_at.asc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    
+    def count_printer_queue(self, db: Session, *, user_id: int) -> int:
+        """Count print jobs for a specific printer operator."""
+        return db.query(PrintJob).filter(
+            or_(
+                and_(PrintJob.status == PrintJobStatus.QUEUED, PrintJob.assigned_to_user_id.is_(None)),
+                PrintJob.assigned_to_user_id == user_id
+            )
+        ).count()
+    
+    def get_queue_statistics(self, db: Session) -> dict:
+        """Get queue statistics."""
+        from sqlalchemy import func
+        
+        stats = {}
+        for status in PrintJobStatus:
+            count = db.query(func.count(PrintJob.id)).filter(PrintJob.status == status).scalar()
+            stats[status.value] = count
+        
+        return stats
+    
+    def get_user_statistics(self, db: Session, *, user_id: int) -> dict:
+        """Get statistics for a specific user."""
+        from sqlalchemy import func
+        
+        completed_count = db.query(func.count(PrintJob.id)).filter(
+            and_(
+                PrintJob.printed_by_user_id == user_id,
+                PrintJob.status == PrintJobStatus.COMPLETED
+            )
+        ).scalar()
+        
+        assigned_count = db.query(func.count(PrintJob.id)).filter(
+            PrintJob.assigned_to_user_id == user_id
+        ).scalar()
+        
+        return {
+            "completed": completed_count,
+            "assigned": assigned_count
+        }
 
 
 class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, ShippingRecordUpdate]):
