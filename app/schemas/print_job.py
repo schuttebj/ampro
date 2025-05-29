@@ -19,6 +19,7 @@ class PrintJobBase(BaseModel):
 class PrintJobCreate(PrintJobBase):
     application_id: int
     license_id: int
+    status: Optional[str] = "queued"
 
 
 class PrintJobUpdate(BaseModel):
