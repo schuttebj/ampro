@@ -418,8 +418,8 @@ def get_print_queue(
     print_jobs = crud.print_job.get_queue(db, skip=skip, limit=limit)
     
     # Get counts
-    queued_count = len([job for job in print_jobs if job.status == PrintJobStatus.QUEUED])
-    assigned_count = len([job for job in print_jobs if job.status == PrintJobStatus.ASSIGNED])
+    queued_count = len([job for job in print_jobs if job.status.value == 'queued'])
+    assigned_count = len([job for job in print_jobs if job.status.value == 'assigned'])
     
     return {
         "print_jobs": print_jobs,
@@ -964,7 +964,7 @@ def print_license_card(
             detail="Print job not found"
         )
     
-    if print_job.status != PrintJobStatus.PRINTING:
+    if print_job.status.value != 'printing':
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Print job is not in printing status"

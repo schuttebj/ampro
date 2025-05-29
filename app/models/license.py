@@ -200,7 +200,7 @@ class PrintJob(BaseModel):
     license_id = Column(Integer, ForeignKey("license.id"), nullable=False)
     
     # Print job details
-    status = Column(Enum(PrintJobStatus), default=PrintJobStatus.QUEUED, nullable=False)
+    status = Column(Enum(PrintJobStatus), default='queued', nullable=False)
     priority = Column(Integer, default=1, nullable=False)  # 1=normal, 2=high, 3=urgent
     
     # File paths for printing

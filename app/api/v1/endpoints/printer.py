@@ -152,7 +152,7 @@ def start_print_job(
         )
     
     # Check if job can be started
-    if print_job.status != PrintJobStatus.ASSIGNED:
+    if print_job.status.value != 'assigned':
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Print job cannot be started (not in assigned status)"
@@ -207,7 +207,7 @@ def complete_print_job(
         )
     
     # Check if job can be completed
-    if print_job.status != PrintJobStatus.PRINTING:
+    if print_job.status.value != 'printing':
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Print job cannot be completed (not in printing status)"
