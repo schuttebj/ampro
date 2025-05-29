@@ -108,7 +108,7 @@ class ApplicationStatus(str, enum.Enum):
     APPROVED = "approved"                      # Application approved, ready for license generation
     LICENSE_GENERATED = "license_generated"    # License files created
     QUEUED_FOR_PRINTING = "queued_for_printing"  # In print queue
-    PRINTING = "PRINTING"                      # Currently being printed
+    PRINTING = "printing"                      # Currently being printed
     PRINTED = "printed"                        # Physical card printed
     SHIPPED = "shipped"                        # Sent to collection point
     READY_FOR_COLLECTION = "ready_for_collection"  # At collection point
@@ -118,19 +118,19 @@ class ApplicationStatus(str, enum.Enum):
 
 
 class PrintJobStatus(str, enum.Enum):
-    QUEUED = "QUEUED"                         # Waiting in print queue
-    ASSIGNED = "ASSIGNED"                     # Assigned to printer operator
-    PRINTING = "PRINTING"                     # Currently printing
-    COMPLETED = "COMPLETED"                   # Successfully printed
-    FAILED = "FAILED"                         # Print job failed
-    CANCELLED = "CANCELLED"                   # Print job cancelled
+    QUEUED = "queued"                         # Waiting in print queue
+    ASSIGNED = "assigned"                     # Assigned to printer operator
+    PRINTING = "printing"                     # Currently printing
+    COMPLETED = "completed"                   # Successfully printed
+    FAILED = "failed"                         # Print job failed
+    CANCELLED = "cancelled"                   # Print job cancelled
 
 
 class ShippingStatus(str, enum.Enum):
-    PENDING = "PENDING"                       # Ready to ship
-    IN_TRANSIT = "IN_TRANSIT"                # Being shipped
-    DELIVERED = "DELIVERED"                   # Delivered to collection point
-    FAILED = "FAILED"                         # Shipping failed
+    PENDING = "pending"                       # Ready to ship
+    IN_TRANSIT = "in_transit"                # Being shipped
+    DELIVERED = "delivered"                   # Delivered to collection point
+    FAILED = "failed"                         # Shipping failed
 
 
 class ApplicationType(str, enum.Enum):

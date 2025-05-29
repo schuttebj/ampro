@@ -418,8 +418,8 @@ def get_print_queue(
     print_jobs = crud.print_job.get_queue(db, skip=skip, limit=limit)
     
     # Get counts
-    queued_count = len([job for job in print_jobs if job.status.value == 'QUEUED'])
-    assigned_count = len([job for job in print_jobs if job.status.value == 'ASSIGNED'])
+    queued_count = len([job for job in print_jobs if job.status.value == 'queued'])
+    assigned_count = len([job for job in print_jobs if job.status.value == 'assigned'])
     
     return {
         "print_jobs": print_jobs,
@@ -835,12 +835,12 @@ def get_print_job_statistics(
     total = sum(stats.values())
     
     return {
-        "queued": stats.get("QUEUED", 0),
-        "assigned": stats.get("ASSIGNED", 0),
-        "printing": stats.get("PRINTING", 0),
-        "completed": stats.get("COMPLETED", 0),
-        "failed": stats.get("FAILED", 0),
-        "cancelled": stats.get("CANCELLED", 0),
+        "queued": stats.get("queued", 0),
+        "assigned": stats.get("assigned", 0),
+        "printing": stats.get("printing", 0),
+        "completed": stats.get("completed", 0),
+        "failed": stats.get("failed", 0),
+        "cancelled": stats.get("cancelled", 0),
         "total": total
     }
 
@@ -858,10 +858,10 @@ def get_shipping_statistics(
     total = sum(stats.values())
     
     return {
-        "pending": stats.get("PENDING", 0),
-        "in_transit": stats.get("IN_TRANSIT", 0),
-        "delivered": stats.get("DELIVERED", 0),
-        "failed": stats.get("FAILED", 0),
+        "pending": stats.get("pending", 0),
+        "in_transit": stats.get("in_transit", 0),
+        "delivered": stats.get("delivered", 0),
+        "failed": stats.get("failed", 0),
         "total": total
     }
 
@@ -964,7 +964,7 @@ def print_license_card(
             detail="Print job not found"
         )
     
-    if print_job.status.value != 'PRINTING':
+    if print_job.status.value != 'printing':
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Print job is not in printing status"
