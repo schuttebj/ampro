@@ -1116,23 +1116,32 @@ def manually_create_print_job(
     """
     Manually create a print job for an approved application.
     """
+    print(f"DEBUG: Creating print job for application {application_id}")
+    
     # Get application
     application = crud.license_application.get(db, id=application_id)
     if not application:
+        print(f"DEBUG: Application {application_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Application not found"
         )
     
+    print(f"DEBUG: Application {application_id} status: {application.status}")
+    print(f"DEBUG: Expected status: {ApplicationStatus.APPROVED.value}")
+    print(f"DEBUG: Status match: {application.status == ApplicationStatus.APPROVED.value}")
+    
     if application.status != ApplicationStatus.APPROVED.value:
+        print(f"DEBUG: Status validation failed - got '{application.status}', expected '{ApplicationStatus.APPROVED.value}'")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Application must be approved to create print job"
+            detail=f"Application must be approved to create print job. Current status: {application.status}, expected: {ApplicationStatus.APPROVED.value}"
         )
     
     # Check if print job already exists
     existing_print_jobs = crud.print_job.get_by_application_id(db, application_id=application_id)
     if existing_print_jobs:
+        print(f"DEBUG: Print job already exists for application {application_id}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Print job already exists for this application"
@@ -1140,6 +1149,7 @@ def manually_create_print_job(
     
     # Get license
     if not application.approved_license_id:
+        print(f"DEBUG: No approved license ID for application {application_id}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No approved license found for this application"
@@ -1147,6 +1157,7 @@ def manually_create_print_job(
     
     license = crud.license.get(db, id=application.approved_license_id)
     if not license:
+        print(f"DEBUG: Approved license {application.approved_license_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Approved license not found"
