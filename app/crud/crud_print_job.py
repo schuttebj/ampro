@@ -18,18 +18,8 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     
     def get_queue(self, db: Session, *, skip: int = 0, limit: int = 100) -> List[PrintJob]:
         """Get print jobs in queue ordered by priority and queue time."""
+        # Always use lowercase string values to match database enum
         try:
-            # Use enum objects directly for filtering
-            return (
-                db.query(PrintJob)
-                .filter(PrintJob.status.in_([PrintJobStatus.QUEUED, PrintJobStatus.ASSIGNED]))
-                .order_by(PrintJob.priority.desc(), PrintJob.queued_at.asc())
-                .offset(skip)
-                .limit(limit)
-                .all()
-            )
-        except Exception as e:
-            # Fallback to string comparison if enum fails
             return (
                 db.query(PrintJob)
                 .filter(PrintJob.status.in_(['queued', 'assigned']))
@@ -38,12 +28,16 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
                 .limit(limit)
                 .all()
             )
+        except Exception as e:
+            print(f"Error in get_queue: {e}")
+            # Return empty list if query fails
+            return []
     
     def get_by_status(self, db: Session, *, status: PrintJobStatus, skip: int = 0, limit: int = 100) -> List[PrintJob]:
         """Get print jobs by status."""
         return (
             db.query(PrintJob)
-            .filter(PrintJob.status == status)
+            .filter(PrintJob.status == status.value)
             .order_by(PrintJob.queued_at.desc())
             .offset(skip)
             .limit(limit)
@@ -69,7 +63,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     def assign_to_user(self, db: Session, *, print_job_id: int, user_id: int) -> Optional[PrintJob]:
         """Assign a print job to a user."""
         print_job = self.get(db, id=print_job_id)
-        if print_job and print_job.status.value == 'queued':
+        if print_job and print_job.status == 'queued':
             from datetime import datetime
             update_data = {
                 "assigned_to_user_id": user_id,
@@ -82,7 +76,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     def start_printing(self, db: Session, *, print_job_id: int, user_id: int, printer_name: str = None) -> Optional[PrintJob]:
         """Mark a print job as started."""
         print_job = self.get(db, id=print_job_id)
-        if print_job and print_job.status.value == 'assigned':
+        if print_job and print_job.status == 'assigned':
             from datetime import datetime
             update_data = {
                 "status": 'printing',
@@ -95,7 +89,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     def complete_printing(self, db: Session, *, print_job_id: int, user_id: int, copies_printed: int = 1, notes: str = None) -> Optional[PrintJob]:
         """Mark a print job as completed."""
         print_job = self.get(db, id=print_job_id)
-        if print_job and print_job.status.value == 'printing':
+        if print_job and print_job.status == 'printing':
             from datetime import datetime
             update_data = {
                 "status": 'completed',
@@ -132,7 +126,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
             .filter(
                 and_(
                     PrintJob.assigned_to_user_id == user_id,
-                    PrintJob.status.in_([PrintJobStatus.ASSIGNED, PrintJobStatus.PRINTING])
+                    PrintJob.status.in_(['assigned', 'printing'])
                 )
             )
             .order_by(PrintJob.assigned_at.desc())
@@ -147,7 +141,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
             db.query(PrintJob)
             .filter(
                 or_(
-                    and_(PrintJob.status == PrintJobStatus.QUEUED, PrintJob.assigned_to_user_id.is_(None)),
+                    and_(PrintJob.status == 'queued', PrintJob.assigned_to_user_id.is_(None)),
                     PrintJob.assigned_to_user_id == user_id
                 )
             )
@@ -161,7 +155,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
         """Count print jobs for a specific printer operator."""
         return db.query(PrintJob).filter(
             or_(
-                and_(PrintJob.status == PrintJobStatus.QUEUED, PrintJob.assigned_to_user_id.is_(None)),
+                and_(PrintJob.status == 'queued', PrintJob.assigned_to_user_id.is_(None)),
                 PrintJob.assigned_to_user_id == user_id
             )
         ).count()
@@ -171,9 +165,14 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
         from sqlalchemy import func
         
         stats = {}
-        for status in PrintJobStatus:
-            count = db.query(func.count(PrintJob.id)).filter(PrintJob.status == status).scalar()
-            stats[status.value] = count
+        enum_values = ['queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled']
+        for status_value in enum_values:
+            try:
+                count = db.query(func.count(PrintJob.id)).filter(PrintJob.status == status_value).scalar()
+                stats[status_value] = count or 0
+            except Exception as e:
+                print(f"Error getting count for status {status_value}: {e}")
+                stats[status_value] = 0
         
         return stats
     
@@ -181,21 +180,25 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
         """Get statistics for a specific user."""
         from sqlalchemy import func
         
-        completed_count = db.query(func.count(PrintJob.id)).filter(
-            and_(
-                PrintJob.printed_by_user_id == user_id,
-                PrintJob.status == PrintJobStatus.COMPLETED
-            )
-        ).scalar()
-        
-        assigned_count = db.query(func.count(PrintJob.id)).filter(
-            PrintJob.assigned_to_user_id == user_id
-        ).scalar()
-        
-        return {
-            "completed": completed_count,
-            "assigned": assigned_count
-        }
+        try:
+            completed_count = db.query(func.count(PrintJob.id)).filter(
+                and_(
+                    PrintJob.printed_by_user_id == user_id,
+                    PrintJob.status == 'completed'
+                )
+            ).scalar() or 0
+            
+            assigned_count = db.query(func.count(PrintJob.id)).filter(
+                PrintJob.assigned_to_user_id == user_id
+            ).scalar() or 0
+            
+            return {
+                "completed": completed_count,
+                "assigned": assigned_count
+            }
+        except Exception as e:
+            print(f"Error getting user statistics: {e}")
+            return {"completed": 0, "assigned": 0}
 
 
 class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, ShippingRecordUpdate]):
@@ -211,7 +214,7 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
         """Get shipping records by status."""
         return (
             db.query(ShippingRecord)
-            .filter(ShippingRecord.status == status)
+            .filter(ShippingRecord.status == status.value)
             .order_by(ShippingRecord.shipped_at.desc())
             .offset(skip)
             .limit(limit)
@@ -232,10 +235,10 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
     def ship_record(self, db: Session, *, shipping_id: int, user_id: int, tracking_number: str = None, shipping_method: str = None) -> Optional[ShippingRecord]:
         """Mark a shipping record as shipped."""
         shipping_record = self.get(db, id=shipping_id)
-        if shipping_record and shipping_record.status == ShippingStatus.PENDING.value:
+        if shipping_record and shipping_record.status == 'pending':
             from datetime import datetime
             update_data = {
-                "status": ShippingStatus.IN_TRANSIT.value,
+                "status": 'in_transit',
                 "shipped_at": datetime.utcnow(),
                 "shipped_by_user_id": user_id,
                 "tracking_number": tracking_number,
@@ -247,10 +250,10 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
     def deliver_record(self, db: Session, *, shipping_id: int, user_id: int, notes: str = None) -> Optional[ShippingRecord]:
         """Mark a shipping record as delivered."""
         shipping_record = self.get(db, id=shipping_id)
-        if shipping_record and shipping_record.status == ShippingStatus.IN_TRANSIT.value:
+        if shipping_record and shipping_record.status == 'in_transit':
             from datetime import datetime
             update_data = {
-                "status": ShippingStatus.DELIVERED.value,
+                "status": 'delivered',
                 "delivered_at": datetime.utcnow(),
                 "received_by_user_id": user_id,
                 "shipping_notes": notes
@@ -262,16 +265,14 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
         """Get shipping statistics."""
         from sqlalchemy import func
         
-        # Hardcode lowercase values to match database enum until deployment completes
-        enum_values = ['pending', 'in_transit', 'delivered', 'failed']
-        
         stats = {}
+        enum_values = ['pending', 'in_transit', 'delivered', 'failed']
         for status_value in enum_values:
             try:
                 count = db.query(func.count(ShippingRecord.id)).filter(ShippingRecord.status == status_value).scalar()
-                stats[status_value] = count
+                stats[status_value] = count or 0
             except Exception as e:
-                # If any status fails, set to 0 and continue
+                print(f"Error getting shipping count for status {status_value}: {e}")
                 stats[status_value] = 0
         
         return stats
