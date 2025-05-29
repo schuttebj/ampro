@@ -1,6 +1,6 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, cast, Text
 
 from app.crud.base import CRUDBase
 from app.models.license import PrintJob, PrintJobStatus, ShippingRecord, ShippingStatus
@@ -18,11 +18,11 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     
     def get_queue(self, db: Session, *, skip: int = 0, limit: int = 100) -> List[PrintJob]:
         """Get print jobs in queue ordered by priority and queue time."""
-        # Always use lowercase string values to match database enum (deployment trigger)
+        # Cast status to text to bypass enum handling that converts strings to uppercase enum names
         try:
             return (
                 db.query(PrintJob)
-                .filter(PrintJob.status.in_(['queued', 'assigned']))
+                .filter(cast(PrintJob.status, Text).in_(['queued', 'assigned']))
                 .order_by(PrintJob.priority.desc(), PrintJob.queued_at.asc())
                 .offset(skip)
                 .limit(limit)
@@ -51,7 +51,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
             .filter(
                 and_(
                     PrintJob.assigned_to_user_id == user_id,
-                    PrintJob.status.in_(['assigned', 'printing'])
+                    cast(PrintJob.status, Text).in_(['assigned', 'printing'])
                 )
             )
             .order_by(PrintJob.assigned_at.desc())
@@ -63,7 +63,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     def assign_to_user(self, db: Session, *, print_job_id: int, user_id: int) -> Optional[PrintJob]:
         """Assign a print job to a user."""
         print_job = self.get(db, id=print_job_id)
-        if print_job and print_job.status == 'queued':
+        if print_job and str(print_job.status) == 'queued':
             from datetime import datetime
             update_data = {
                 "assigned_to_user_id": user_id,
@@ -76,7 +76,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     def start_printing(self, db: Session, *, print_job_id: int, user_id: int, printer_name: str = None) -> Optional[PrintJob]:
         """Mark a print job as started."""
         print_job = self.get(db, id=print_job_id)
-        if print_job and print_job.status == 'assigned':
+        if print_job and str(print_job.status) == 'assigned':
             from datetime import datetime
             update_data = {
                 "status": 'printing',
@@ -89,7 +89,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     def complete_printing(self, db: Session, *, print_job_id: int, user_id: int, copies_printed: int = 1, notes: str = None) -> Optional[PrintJob]:
         """Mark a print job as completed."""
         print_job = self.get(db, id=print_job_id)
-        if print_job and print_job.status == 'printing':
+        if print_job and str(print_job.status) == 'printing':
             from datetime import datetime
             update_data = {
                 "status": 'completed',
@@ -105,16 +105,16 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
         """Get print job statistics."""
         from sqlalchemy import func
         
-        # Hardcode lowercase values to match database enum until deployment completes
+        # Use cast to text to bypass enum handling
         enum_values = ['queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled']
         
         stats = {}
         for status_value in enum_values:
             try:
-                count = db.query(func.count(PrintJob.id)).filter(PrintJob.status == status_value).scalar()
-                stats[status_value] = count
+                count = db.query(func.count(PrintJob.id)).filter(cast(PrintJob.status, Text) == status_value).scalar()
+                stats[status_value] = count or 0
             except Exception as e:
-                # If any status fails, set to 0 and continue
+                print(f"Error getting count for status {status_value}: {e}")
                 stats[status_value] = 0
         
         return stats
@@ -126,7 +126,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
             .filter(
                 and_(
                     PrintJob.assigned_to_user_id == user_id,
-                    PrintJob.status.in_(['assigned', 'printing'])
+                    cast(PrintJob.status, Text).in_(['assigned', 'printing'])
                 )
             )
             .order_by(PrintJob.assigned_at.desc())
@@ -141,7 +141,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
             db.query(PrintJob)
             .filter(
                 or_(
-                    and_(PrintJob.status == 'queued', PrintJob.assigned_to_user_id.is_(None)),
+                    and_(cast(PrintJob.status, Text) == 'queued', PrintJob.assigned_to_user_id.is_(None)),
                     PrintJob.assigned_to_user_id == user_id
                 )
             )
@@ -155,7 +155,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
         """Count print jobs for a specific printer operator."""
         return db.query(PrintJob).filter(
             or_(
-                and_(PrintJob.status == 'queued', PrintJob.assigned_to_user_id.is_(None)),
+                and_(cast(PrintJob.status, Text) == 'queued', PrintJob.assigned_to_user_id.is_(None)),
                 PrintJob.assigned_to_user_id == user_id
             )
         ).count()
@@ -168,7 +168,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
         enum_values = ['queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled']
         for status_value in enum_values:
             try:
-                count = db.query(func.count(PrintJob.id)).filter(PrintJob.status == status_value).scalar()
+                count = db.query(func.count(PrintJob.id)).filter(cast(PrintJob.status, Text) == status_value).scalar()
                 stats[status_value] = count or 0
             except Exception as e:
                 print(f"Error getting count for status {status_value}: {e}")
@@ -184,7 +184,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
             completed_count = db.query(func.count(PrintJob.id)).filter(
                 and_(
                     PrintJob.printed_by_user_id == user_id,
-                    PrintJob.status == 'completed'
+                    cast(PrintJob.status, Text) == 'completed'
                 )
             ).scalar() or 0
             
@@ -235,7 +235,7 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
     def ship_record(self, db: Session, *, shipping_id: int, user_id: int, tracking_number: str = None, shipping_method: str = None) -> Optional[ShippingRecord]:
         """Mark a shipping record as shipped."""
         shipping_record = self.get(db, id=shipping_id)
-        if shipping_record and shipping_record.status == 'pending':
+        if shipping_record and str(shipping_record.status) == 'pending':
             from datetime import datetime
             update_data = {
                 "status": 'in_transit',
@@ -250,7 +250,7 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
     def deliver_record(self, db: Session, *, shipping_id: int, user_id: int, notes: str = None) -> Optional[ShippingRecord]:
         """Mark a shipping record as delivered."""
         shipping_record = self.get(db, id=shipping_id)
-        if shipping_record and shipping_record.status == 'in_transit':
+        if shipping_record and str(shipping_record.status) == 'in_transit':
             from datetime import datetime
             update_data = {
                 "status": 'delivered',
@@ -266,10 +266,11 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
         from sqlalchemy import func
         
         stats = {}
+        # Use cast to text to bypass enum handling
         enum_values = ['pending', 'in_transit', 'delivered', 'failed']
         for status_value in enum_values:
             try:
-                count = db.query(func.count(ShippingRecord.id)).filter(ShippingRecord.status == status_value).scalar()
+                count = db.query(func.count(ShippingRecord.id)).filter(cast(ShippingRecord.status, Text) == status_value).scalar()
                 stats[status_value] = count or 0
             except Exception as e:
                 print(f"Error getting shipping count for status {status_value}: {e}")
