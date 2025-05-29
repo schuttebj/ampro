@@ -183,8 +183,21 @@ def read_pending_applications(
         }
     )
     
-    # Convert to dict to avoid pydantic validation issues
-    return jsonable_encoder(applications)
+    # Build response with related data like other endpoints
+    result = []
+    for application in applications:
+        citizen = crud.citizen.get(db, id=application.citizen_id) if application.citizen_id else None
+        reviewer = crud.user.get(db, id=application.reviewed_by) if application.reviewed_by else None
+        license = crud.license.get(db, id=application.approved_license_id) if application.approved_license_id else None
+        
+        app_data = jsonable_encoder(application)
+        app_data["citizen"] = jsonable_encoder(citizen) if citizen else None
+        app_data["reviewer"] = jsonable_encoder(reviewer) if reviewer else None
+        app_data["license"] = jsonable_encoder(license) if license else None
+        
+        result.append(app_data)
+    
+    return result
 
 
 @router.get("/{application_id}", response_model=Dict)
