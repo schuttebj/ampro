@@ -1150,18 +1150,57 @@ def manually_create_print_job(
     # Get license
     if not application.approved_license_id:
         print(f"DEBUG: No approved license ID for application {application_id}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No approved license found for this application"
-        )
-    
-    license = crud.license.get(db, id=application.approved_license_id)
-    if not license:
-        print(f"DEBUG: Approved license {application.approved_license_id} not found")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Approved license not found"
-        )
+        
+        # Try to find an existing license for this citizen and category
+        citizen = crud.citizen.get(db, id=application.citizen_id)
+        existing_licenses = crud.license.get_by_citizen_id(db, citizen_id=application.citizen_id)
+        
+        # Look for a license that matches this application's category
+        matching_license = None
+        for license in existing_licenses:
+            if license.category == application.applied_category:
+                matching_license = license
+                break
+        
+        if matching_license:
+            print(f"DEBUG: Found existing license {matching_license.id} for application {application_id}")
+            # Update application with the found license
+            crud.license_application.update(
+                db, 
+                db_obj=application, 
+                obj_in={"approved_license_id": matching_license.id}
+            )
+            license = matching_license
+        else:
+            print(f"DEBUG: Creating new license for application {application_id}")
+            # Create a new license since none exists
+            license_number = crud.license.generate_license_number()
+            license_data = {
+                "citizen_id": application.citizen_id,
+                "license_number": license_number,
+                "category": application.applied_category,
+                "collection_point": application.collection_point or "Main Office",
+                "status": "active"
+            }
+            
+            license = crud.license.create(db, obj_in=license_data)
+            
+            # Update application with new license
+            crud.license_application.update(
+                db, 
+                db_obj=application, 
+                obj_in={"approved_license_id": license.id}
+            )
+            
+            print(f"DEBUG: Created new license {license.id} for application {application_id}")
+    else:
+        license = crud.license.get(db, id=application.approved_license_id)
+        if not license:
+            print(f"DEBUG: Approved license {application.approved_license_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Approved license not found"
+            )
     
     # Create mock file paths for testing (in production these would be real generated files)
     citizen = crud.citizen.get(db, id=application.citizen_id)
