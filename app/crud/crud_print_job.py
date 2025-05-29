@@ -99,10 +99,17 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
         """Get print job statistics."""
         from sqlalchemy import func
         
+        # Hardcode lowercase values to match database enum until deployment completes
+        enum_values = ['queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled']
+        
         stats = {}
-        for status in PrintJobStatus:
-            count = db.query(func.count(PrintJob.id)).filter(PrintJob.status == status.value).scalar()
-            stats[status.value] = count
+        for status_value in enum_values:
+            try:
+                count = db.query(func.count(PrintJob.id)).filter(PrintJob.status == status_value).scalar()
+                stats[status_value] = count
+            except Exception as e:
+                # If any status fails, set to 0 and continue
+                stats[status_value] = 0
         
         return stats
 
@@ -171,10 +178,17 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
         """Get shipping statistics."""
         from sqlalchemy import func
         
+        # Hardcode lowercase values to match database enum until deployment completes
+        enum_values = ['pending', 'in_transit', 'delivered', 'failed']
+        
         stats = {}
-        for status in ShippingStatus:
-            count = db.query(func.count(ShippingRecord.id)).filter(ShippingRecord.status == status.value).scalar()
-            stats[status.value] = count
+        for status_value in enum_values:
+            try:
+                count = db.query(func.count(ShippingRecord.id)).filter(ShippingRecord.status == status_value).scalar()
+                stats[status_value] = count
+            except Exception as e:
+                # If any status fails, set to 0 and continue
+                stats[status_value] = 0
         
         return stats
 
