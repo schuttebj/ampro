@@ -1059,4 +1059,226 @@ def print_license_card(
         "printer_used": printer_name or printing_service.get_default_printer(),
         "copies": copies,
         "iso_compliant": True
+    }
+
+
+# ============================================================================
+# MANUAL PRINT JOB MANAGEMENT (FOR TESTING)
+# ============================================================================
+
+@router.get("/applications/approved-without-print-jobs", response_model=List[Dict[str, Any]])
+def get_approved_applications_without_print_jobs(
+    *,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get approved applications that don't have print jobs yet.
+    """
+    from sqlalchemy import and_
+    
+    # Find applications that are approved but don't have print jobs
+    approved_apps = (
+        db.query(crud.license_application.model)
+        .filter(crud.license_application.model.status == ApplicationStatus.APPROVED.value)
+        .all()
+    )
+    
+    result = []
+    for app in approved_apps:
+        # Check if this application has any print jobs
+        print_jobs = crud.print_job.get_by_application_id(db, application_id=app.id)
+        if not print_jobs:
+            citizen = crud.citizen.get(db, id=app.citizen_id)
+            license = crud.license.get(db, id=app.approved_license_id) if app.approved_license_id else None
+            
+            result.append({
+                "application_id": app.id,
+                "citizen_name": f"{citizen.first_name} {citizen.last_name}" if citizen else "Unknown",
+                "citizen_id_number": citizen.id_number if citizen else "N/A",
+                "applied_category": app.applied_category.value,
+                "approved_date": app.review_date,
+                "license_id": license.id if license else None,
+                "license_number": license.license_number if license else None,
+                "collection_point": app.collection_point
+            })
+    
+    return result
+
+
+@router.post("/applications/{application_id}/create-print-job", response_model=Dict[str, Any])
+def manually_create_print_job(
+    *,
+    db: Session = Depends(get_db),
+    application_id: int,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Manually create a print job for an approved application.
+    """
+    # Get application
+    application = crud.license_application.get(db, id=application_id)
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found"
+        )
+    
+    if application.status != ApplicationStatus.APPROVED.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Application must be approved to create print job"
+        )
+    
+    # Check if print job already exists
+    existing_print_jobs = crud.print_job.get_by_application_id(db, application_id=application_id)
+    if existing_print_jobs:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Print job already exists for this application"
+        )
+    
+    # Get license
+    if not application.approved_license_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No approved license found for this application"
+        )
+    
+    license = crud.license.get(db, id=application.approved_license_id)
+    if not license:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Approved license not found"
+        )
+    
+    # Create mock file paths for testing (in production these would be real generated files)
+    citizen = crud.citizen.get(db, id=application.citizen_id)
+    license_number = license.license_number
+    
+    mock_file_paths = {
+        "front_pdf_path": f"/tmp/licenses/{license_number}_front.pdf",
+        "back_pdf_path": f"/tmp/licenses/{license_number}_back.pdf", 
+        "combined_pdf_path": f"/tmp/licenses/{license_number}_combined.pdf"
+    }
+    
+    # Create print job
+    print_job_data = {
+        "application_id": application_id,
+        "license_id": license.id,
+        "front_pdf_path": mock_file_paths["front_pdf_path"],
+        "back_pdf_path": mock_file_paths["back_pdf_path"],
+        "combined_pdf_path": mock_file_paths["combined_pdf_path"],
+        "priority": 1
+    }
+    
+    print_job = crud.print_job.create(db, obj_in=print_job_data)
+    
+    # Update application status to queued for printing
+    crud.license_application.update(
+        db, 
+        db_obj=application, 
+        obj_in={"status": ApplicationStatus.QUEUED_FOR_PRINTING.value}
+    )
+    
+    # Log action
+    crud.audit_log.create(
+        db,
+        obj_in={
+            "user_id": current_user.id,
+            "action_type": ActionType.CREATE,
+            "resource_type": ResourceType.APPLICATION,
+            "resource_id": str(application.id),
+            "description": f"Print job manually created for application {application.id} by {current_user.username}"
+        }
+    )
+    
+    return {
+        "message": "Print job created successfully",
+        "print_job_id": print_job.id,
+        "application_id": application.id,
+        "license_id": license.id,
+        "license_number": license.license_number,
+        "citizen_name": f"{citizen.first_name} {citizen.last_name}" if citizen else "Unknown",
+        "application_status": ApplicationStatus.QUEUED_FOR_PRINTING.value,
+        "created_at": print_job.created_at
+    }
+
+
+@router.post("/test/create-test-print-job", response_model=Dict[str, Any])
+def create_test_print_job(
+    *,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Create a test print job for testing the print queue system.
+    """
+    # Find any approved application without a print job
+    approved_apps = (
+        db.query(crud.license_application.model)
+        .filter(crud.license_application.model.status == ApplicationStatus.APPROVED.value)
+        .all()
+    )
+    
+    test_app = None
+    for app in approved_apps:
+        print_jobs = crud.print_job.get_by_application_id(db, application_id=app.id)
+        if not print_jobs and app.approved_license_id:
+            test_app = app
+            break
+    
+    if not test_app:
+        # Create a test application if none exists
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No approved applications available for test print job. Please approve an application first."
+        )
+    
+    # Get license and citizen
+    license = crud.license.get(db, id=test_app.approved_license_id)
+    citizen = crud.citizen.get(db, id=test_app.citizen_id)
+    
+    # Create test print job
+    print_job_data = {
+        "application_id": test_app.id,
+        "license_id": license.id,
+        "front_pdf_path": f"/tmp/test_licenses/TEST_{license.license_number}_front.pdf",
+        "back_pdf_path": f"/tmp/test_licenses/TEST_{license.license_number}_back.pdf",
+        "combined_pdf_path": f"/tmp/test_licenses/TEST_{license.license_number}_combined.pdf",
+        "priority": 2  # High priority for test
+    }
+    
+    print_job = crud.print_job.create(db, obj_in=print_job_data)
+    
+    # Update application status
+    crud.license_application.update(
+        db, 
+        db_obj=test_app, 
+        obj_in={"status": ApplicationStatus.QUEUED_FOR_PRINTING.value}
+    )
+    
+    # Log action
+    crud.audit_log.create(
+        db,
+        obj_in={
+            "user_id": current_user.id,
+            "action_type": ActionType.CREATE,
+            "resource_type": ResourceType.APPLICATION,
+            "resource_id": str(test_app.id),
+            "description": f"TEST print job created for application {test_app.id} by {current_user.username}"
+        }
+    )
+    
+    return {
+        "message": "Test print job created successfully",
+        "print_job_id": print_job.id,
+        "application_id": test_app.id,
+        "license_id": license.id,
+        "license_number": license.license_number,
+        "citizen_name": f"{citizen.first_name} {citizen.last_name}" if citizen else "Unknown",
+        "priority": 2,
+        "status": "queued",
+        "test_job": True,
+        "created_at": print_job.created_at
     } 
