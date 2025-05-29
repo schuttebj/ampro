@@ -20,7 +20,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
         """Get print jobs in queue ordered by priority and queue time."""
         return (
             db.query(PrintJob)
-            .filter(PrintJob.status.in_(['queued', 'assigned']))
+            .filter(PrintJob.status.in_(['QUEUED', 'ASSIGNED']))
             .order_by(PrintJob.priority.desc(), PrintJob.queued_at.asc())
             .offset(skip)
             .limit(limit)
@@ -45,7 +45,7 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
             .filter(
                 and_(
                     PrintJob.assigned_to_user_id == user_id,
-                    PrintJob.status.in_(['assigned', 'printing'])
+                    PrintJob.status.in_(['ASSIGNED', 'PRINTING'])
                 )
             )
             .order_by(PrintJob.assigned_at.desc())
@@ -57,12 +57,12 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     def assign_to_user(self, db: Session, *, print_job_id: int, user_id: int) -> Optional[PrintJob]:
         """Assign a print job to a user."""
         print_job = self.get(db, id=print_job_id)
-        if print_job and print_job.status.value == 'queued':
+        if print_job and print_job.status.value == 'QUEUED':
             from datetime import datetime
             update_data = {
                 "assigned_to_user_id": user_id,
                 "assigned_at": datetime.utcnow(),
-                "status": 'assigned'
+                "status": 'ASSIGNED'
             }
             return self.update(db, db_obj=print_job, obj_in=update_data)
         return None
@@ -70,10 +70,10 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     def start_printing(self, db: Session, *, print_job_id: int, user_id: int, printer_name: str = None) -> Optional[PrintJob]:
         """Mark a print job as started."""
         print_job = self.get(db, id=print_job_id)
-        if print_job and print_job.status.value == 'assigned':
+        if print_job and print_job.status.value == 'ASSIGNED':
             from datetime import datetime
             update_data = {
-                "status": 'printing',
+                "status": 'PRINTING',
                 "started_at": datetime.utcnow(),
                 "printer_name": printer_name
             }
@@ -83,10 +83,10 @@ class CRUDPrintJob(CRUDBase[PrintJob, PrintJobCreate, PrintJobUpdate]):
     def complete_printing(self, db: Session, *, print_job_id: int, user_id: int, copies_printed: int = 1, notes: str = None) -> Optional[PrintJob]:
         """Mark a print job as completed."""
         print_job = self.get(db, id=print_job_id)
-        if print_job and print_job.status.value == 'printing':
+        if print_job and print_job.status.value == 'PRINTING':
             from datetime import datetime
             update_data = {
-                "status": 'completed',
+                "status": 'COMPLETED',
                 "completed_at": datetime.utcnow(),
                 "printed_by_user_id": user_id,
                 "copies_printed": copies_printed,
