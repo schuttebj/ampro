@@ -26,7 +26,10 @@ def upgrade():
         DO $$
         BEGIN
             IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'location') THEN
-                -- Convert any uppercase printing_type values to lowercase
+                -- First convert column to text to allow string operations
+                ALTER TABLE location ALTER COLUMN printing_type TYPE text;
+                
+                -- Now convert any uppercase printing_type values to lowercase
                 UPDATE location 
                 SET printing_type = CASE 
                     WHEN UPPER(printing_type) = 'LOCAL' THEN 'local'
@@ -37,11 +40,7 @@ def upgrade():
                 END
                 WHERE printing_type IS NOT NULL;
                 
-                -- Ensure the enum type has the correct values
-                -- First convert column to text temporarily
-                ALTER TABLE location ALTER COLUMN printing_type TYPE text;
-                
-                -- Drop and recreate the enum type if needed
+                -- Drop and recreate the enum type
                 DROP TYPE IF EXISTS printingtype;
                 CREATE TYPE printingtype AS ENUM ('local', 'centralized', 'hybrid', 'disabled');
                 
