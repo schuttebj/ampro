@@ -33,6 +33,7 @@ class User(BaseModel):
     
     # Relationships
     location = relationship("Location", back_populates="users")
+    user_locations = relationship("UserLocation", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<User {self.username}: {self.role}>"
@@ -45,4 +46,20 @@ class User(BaseModel):
     @property
     def can_manage_locations(self):
         """Check if user can manage locations"""
-        return self.is_admin or self.role == UserRole.MANAGER 
+        return self.is_admin or self.role == UserRole.MANAGER
+    
+    @property
+    def assigned_locations(self):
+        """Get all locations this user is assigned to"""
+        return [ul.location for ul in self.user_locations]
+    
+    @property
+    def can_print_locations(self):
+        """Get all locations where this user can print"""
+        return [ul.location for ul in self.user_locations if ul.can_print]
+    
+    @property
+    def primary_location(self):
+        """Get user's primary location"""
+        primary_ul = next((ul for ul in self.user_locations if ul.is_primary), None)
+        return primary_ul.location if primary_ul else self.location 

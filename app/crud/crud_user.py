@@ -1,10 +1,12 @@
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, List
 
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
 
 from app.core.security import get_password_hash, verify_password
 from app.crud.base import CRUDBase
-from app.models.user import User
+from app.models.user import User, UserRole
+from app.models.user_location import UserLocation
 from app.schemas.user import UserCreate, UserUpdate
 
 
@@ -81,6 +83,73 @@ class CRUDUser(CRUDBase[User, UserCreate, UserUpdate]):
         Check if user is superuser.
         """
         return user.is_superuser
+    
+    # NEW: Location and Printer Management Methods
+    
+    def get_by_role(self, db: Session, *, role: UserRole) -> List[User]:
+        """Get all users with a specific role"""
+        return db.query(User).filter(
+            and_(
+                User.role == role,
+                User.is_active == True
+            )
+        ).all()
+    
+    def get_printer_users(self, db: Session) -> List[User]:
+        """Get all users with PRINTER role"""
+        return self.get_by_role(db, role=UserRole.PRINTER)
+    
+    def get_printer_users_for_location(self, db: Session, *, location_id: int) -> List[User]:
+        """Get all printer users who can print at a specific location"""
+        return db.query(User).join(UserLocation).filter(
+            and_(
+                User.role == UserRole.PRINTER,
+                User.is_active == True,
+                UserLocation.location_id == location_id,
+                UserLocation.can_print == True
+            )
+        ).all()
+    
+    def get_users_by_location(self, db: Session, *, location_id: int) -> List[User]:
+        """Get all users assigned to a specific location"""
+        return db.query(User).join(UserLocation).filter(
+            and_(
+                UserLocation.location_id == location_id,
+                User.is_active == True
+            )
+        ).all()
+    
+    def search_users(
+        self, 
+        db: Session, 
+        *, 
+        role: Optional[UserRole] = None,
+        location_id: Optional[int] = None,
+        search_term: Optional[str] = None,
+        can_print: Optional[bool] = None
+    ) -> List[User]:
+        """Search users with multiple filters"""
+        query = db.query(User).filter(User.is_active == True)
+        
+        if role:
+            query = query.filter(User.role == role)
+        
+        if location_id:
+            query = query.join(UserLocation).filter(UserLocation.location_id == location_id)
+            if can_print is not None:
+                query = query.filter(UserLocation.can_print == can_print)
+        
+        if search_term:
+            query = query.filter(
+                or_(
+                    User.username.ilike(f"%{search_term}%"),
+                    User.email.ilike(f"%{search_term}%"),
+                    User.full_name.ilike(f"%{search_term}%"),
+                    User.department.ilike(f"%{search_term}%")
+                )
+            )
+        
+        return query.order_by(User.full_name).all()
 
 
 user = CRUDUser(User) 

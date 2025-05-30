@@ -1338,4 +1338,52 @@ def create_test_print_job(
         "status": "queued",
         "test_job": True,
         "created_at": print_job.created_at
-    } 
+    }
+
+
+@router.get("/printer-users", response_model=List[Dict[str, Any]])
+def get_printer_users(
+    *,
+    db: Session = Depends(get_db),
+    location_id: Optional[int] = None,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get all users with PRINTER role who can be assigned print jobs.
+    Optionally filter by location.
+    """
+    if location_id:
+        # Get printer users for specific location
+        users = crud.user.get_printer_users_for_location(db, location_id=location_id)
+    else:
+        # Get all printer users
+        users = crud.user.get_printer_users(db)
+    
+    # Format response with user details
+    printer_users = []
+    for user in users:
+        user_data = {
+            "id": user.id,
+            "username": user.username,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": user.role.value,
+            "department": user.department,
+            "is_active": user.is_active
+        }
+        
+        # Add location information if available
+        if hasattr(user, 'user_locations') and user.user_locations:
+            user_data["locations"] = [
+                {
+                    "location_id": ul.location_id,
+                    "location_name": ul.location.name if ul.location else None,
+                    "can_print": ul.can_print,
+                    "is_primary": ul.is_primary
+                }
+                for ul in user.user_locations
+            ]
+        
+        printer_users.append(user_data)
+    
+    return printer_users 

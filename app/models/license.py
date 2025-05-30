@@ -223,11 +223,23 @@ class PrintJob(BaseModel):
     copies_printed = Column(Integer, default=1, nullable=False)
     print_notes = Column(Text, nullable=True)
     
+    # NEW: Assignment and Location Management
+    auto_assigned = Column(Boolean, default=False, nullable=False)
+    assignment_rule = Column(String(50), nullable=True)  # 'auto', 'manual', 'location_based', etc.
+    source_location_id = Column(Integer, ForeignKey("location.id"), nullable=True)
+    target_location_id = Column(Integer, ForeignKey("location.id"), nullable=True)
+    printer_id = Column(Integer, ForeignKey("printer.id"), nullable=True)
+    
     # Relationships
     application = relationship("LicenseApplication", back_populates="print_jobs")
     license = relationship("License")
     assigned_to = relationship("User", foreign_keys=[assigned_to_user_id])
     printed_by = relationship("User", foreign_keys=[printed_by_user_id])
+    
+    # NEW: Location and Printer relationships
+    source_location = relationship("Location", foreign_keys=[source_location_id], back_populates="source_print_jobs")
+    target_location = relationship("Location", foreign_keys=[target_location_id], back_populates="target_print_jobs")
+    printer = relationship("Printer", back_populates="print_jobs")
     
     def __repr__(self):
         return f"<PrintJob {self.id}: App {self.application_id} - {self.status}>"

@@ -1,12 +1,13 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users, citizens, licenses, applications, audit, transactions, mock, external, workflow, files, printer, locations
+from app.api.v1.endpoints import auth, users, citizens, licenses, applications, audit, transactions, mock, external, workflow, files, printer, locations, admin
 
 api_router = APIRouter()
 
 # Include all API endpoints
 api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(citizens.router, prefix="/citizens", tags=["citizens"])
 api_router.include_router(licenses.router, prefix="/licenses", tags=["licenses"])
 api_router.include_router(applications.router, prefix="/applications", tags=["applications"])

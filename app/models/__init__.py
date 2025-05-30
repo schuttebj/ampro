@@ -4,7 +4,9 @@
 from .base import BaseModel
 from .user import User, UserRole
 from .citizen import Citizen
-from .location import Location
+from .location import Location, PrintingType
+from .printer import Printer, PrinterType, PrinterStatus
+from .user_location import UserLocation
 from .license import (
     License, 
     LicenseCategory, 
@@ -25,7 +27,12 @@ __all__ = [
     "User", 
     "UserRole",
     "Citizen",
-    "Location", 
+    "Location",
+    "PrintingType",
+    "Printer",
+    "PrinterType", 
+    "PrinterStatus",
+    "UserLocation",
     "License",
     "LicenseCategory",
     "LicenseStatus",
