@@ -419,8 +419,8 @@ def get_print_queue(
     print_jobs = crud.print_job.get_queue(db, skip=skip, limit=limit)
     
     # Get counts
-    queued_count = len([job for job in print_jobs if job.status.value == 'QUEUED'])
-    assigned_count = len([job for job in print_jobs if job.status.value == 'ASSIGNED'])
+    queued_count = len([job for job in print_jobs if job.status == PrintJobStatus.QUEUED])
+    assigned_count = len([job for job in print_jobs if job.status == PrintJobStatus.ASSIGNED])
     
     return {
         "print_jobs": print_jobs,
@@ -1019,7 +1019,7 @@ def print_license_card(
             detail="Print job not found"
         )
     
-    if print_job.status.value != 'PRINTING':
+    if print_job.status != PrintJobStatus.PRINTING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Print job is not in printing status"
@@ -1213,49 +1213,26 @@ def manually_create_print_job(
         "combined_pdf_path": f"/tmp/licenses/{license_number}_combined.pdf"
     }
     
-    # Create print job using raw SQL to bypass enum conversion issues
+    # Create print job using proper CRUD operation instead of raw SQL
     from datetime import datetime
-    from sqlalchemy import text
     
-    now = datetime.utcnow()
+    print_job_data = PrintJobCreate(
+        application_id=application_id,
+        license_id=license.id,
+        status=PrintJobStatus.QUEUED.value,
+        priority=1,
+        front_pdf_path=mock_file_paths["front_pdf_path"],
+        back_pdf_path=mock_file_paths["back_pdf_path"],
+        combined_pdf_path=mock_file_paths["combined_pdf_path"]
+    )
     
-    # Execute raw SQL INSERT to bypass enum handling
-    result = db.execute(text("""
-        INSERT INTO printjob (
-            application_id, license_id, status, priority, 
-            front_pdf_path, back_pdf_path, combined_pdf_path,
-            queued_at, copies_printed, created_at, updated_at, is_active
-        ) VALUES (
-            :application_id, :license_id, :status, :priority,
-            :front_pdf_path, :back_pdf_path, :combined_pdf_path,
-            :queued_at, :copies_printed, :created_at, :updated_at, :is_active
-        ) RETURNING id
-    """), {
-        'application_id': application_id,
-        'license_id': license.id,
-        'status': PrintJobStatus.QUEUED.value,  # Use enum value
-        'priority': 1,
-        'front_pdf_path': mock_file_paths["front_pdf_path"],
-        'back_pdf_path': mock_file_paths["back_pdf_path"],
-        'combined_pdf_path': mock_file_paths["combined_pdf_path"],
-        'queued_at': now,
-        'copies_printed': 1,
-        'created_at': now,
-        'updated_at': now,
-        'is_active': True
-    })
-    
-    print_job_id = result.fetchone()[0]
-    db.commit()
-    
-    # Get the created print job for response
-    print_job = crud.print_job.get(db, id=print_job_id)
+    print_job = crud.print_job.create(db, obj_in=print_job_data)
     
     # Update application status to queued for printing
     crud.license_application.update(
         db, 
         db_obj=application, 
-        obj_in={"status": ApplicationStatus.QUEUED_FOR_PRINTING.value}
+        obj_in={"status": ApplicationStatus.QUEUED_FOR_PRINTING}
     )
     
     # Log action
@@ -1316,49 +1293,26 @@ def create_test_print_job(
     license = crud.license.get(db, id=test_app.approved_license_id)
     citizen = crud.citizen.get(db, id=test_app.citizen_id)
     
-    # Create test print job using raw SQL to bypass enum conversion issues
+    # Create test print job using proper CRUD operation instead of raw SQL
     from datetime import datetime
-    from sqlalchemy import text
     
-    now = datetime.utcnow()
+    print_job_data = PrintJobCreate(
+        application_id=test_app.id,
+        license_id=license.id,
+        status=PrintJobStatus.QUEUED.value,
+        priority=2,  # High priority for test
+        front_pdf_path=f"/tmp/test_licenses/TEST_{license.license_number}_front.pdf",
+        back_pdf_path=f"/tmp/test_licenses/TEST_{license.license_number}_back.pdf",
+        combined_pdf_path=f"/tmp/test_licenses/TEST_{license.license_number}_combined.pdf"
+    )
     
-    # Execute raw SQL INSERT to bypass enum handling
-    result = db.execute(text("""
-        INSERT INTO printjob (
-            application_id, license_id, status, priority, 
-            front_pdf_path, back_pdf_path, combined_pdf_path,
-            queued_at, copies_printed, created_at, updated_at, is_active
-        ) VALUES (
-            :application_id, :license_id, :status, :priority,
-            :front_pdf_path, :back_pdf_path, :combined_pdf_path,
-            :queued_at, :copies_printed, :created_at, :updated_at, :is_active
-        ) RETURNING id
-    """), {
-        'application_id': test_app.id,
-        'license_id': license.id,
-        'status': PrintJobStatus.QUEUED.value,  # Use enum value
-        'priority': 2,  # High priority for test
-        'front_pdf_path': f"/tmp/test_licenses/TEST_{license.license_number}_front.pdf",
-        'back_pdf_path': f"/tmp/test_licenses/TEST_{license.license_number}_back.pdf",
-        'combined_pdf_path': f"/tmp/test_licenses/TEST_{license.license_number}_combined.pdf",
-        'queued_at': now,
-        'copies_printed': 1,
-        'created_at': now,
-        'updated_at': now,
-        'is_active': True
-    })
-    
-    print_job_id = result.fetchone()[0]
-    db.commit()
-    
-    # Get the created print job for response
-    print_job = crud.print_job.get(db, id=print_job_id)
+    print_job = crud.print_job.create(db, obj_in=print_job_data)
     
     # Update application status
     crud.license_application.update(
         db, 
         db_obj=test_app, 
-        obj_in={"status": ApplicationStatus.QUEUED_FOR_PRINTING.value}
+        obj_in={"status": ApplicationStatus.QUEUED_FOR_PRINTING}
     )
     
     # Log action
