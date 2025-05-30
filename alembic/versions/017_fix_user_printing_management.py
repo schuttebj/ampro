@@ -174,6 +174,15 @@ def upgrade():
             print(f"Adding column {col_name} to location table...")
             if col_name == 'default_print_destination_id':
                 op.add_column('location', sa.Column(col_name, col_type, sa.ForeignKey('location.id'), nullable=nullable))
+            elif not nullable and default is not None:
+                # For NOT NULL columns with existing data, use server_default
+                if isinstance(default, bool):
+                    server_default = sa.text('true' if default else 'false')
+                elif isinstance(default, str):
+                    server_default = sa.text(f"'{default}'")
+                else:
+                    server_default = sa.text(str(default))
+                op.add_column('location', sa.Column(col_name, col_type, nullable=nullable, server_default=server_default))
             else:
                 op.add_column('location', sa.Column(col_name, col_type, nullable=nullable, default=default))
     
@@ -206,6 +215,15 @@ def upgrade():
                 op.add_column('printjob', sa.Column(col_name, col_type, sa.ForeignKey('location.id'), nullable=nullable))
             elif col_name == 'printer_id':
                 op.add_column('printjob', sa.Column(col_name, col_type, sa.ForeignKey('printer.id'), nullable=nullable))
+            elif not nullable and default is not None:
+                # For NOT NULL columns with existing data, use server_default
+                if isinstance(default, bool):
+                    server_default = sa.text('true' if default else 'false')
+                elif isinstance(default, str):
+                    server_default = sa.text(f"'{default}'")
+                else:
+                    server_default = sa.text(str(default))
+                op.add_column('printjob', sa.Column(col_name, col_type, nullable=nullable, server_default=server_default))
             else:
                 op.add_column('printjob', sa.Column(col_name, col_type, nullable=nullable, default=default))
     
