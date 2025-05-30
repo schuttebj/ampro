@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional, Union, List
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.crud.base import CRUDBase
 from app.models.location import Location
