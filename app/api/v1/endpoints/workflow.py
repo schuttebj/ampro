@@ -1213,28 +1213,43 @@ def manually_create_print_job(
         "combined_pdf_path": f"/tmp/licenses/{license_number}_combined.pdf"
     }
     
-    # Create print job - bypass schema validation to ensure lowercase status
+    # Create print job using raw SQL to bypass enum conversion issues
     from datetime import datetime
-    from app.models.license import PrintJob as PrintJobModel
+    from sqlalchemy import text
     
-    print_job = PrintJobModel(
-        application_id=application_id,
-        license_id=license.id,
-        status="queued",  # Direct string assignment to bypass enum conversion
-        priority=1,
-        front_pdf_path=mock_file_paths["front_pdf_path"],
-        back_pdf_path=mock_file_paths["back_pdf_path"],
-        combined_pdf_path=mock_file_paths["combined_pdf_path"],
-        queued_at=datetime.utcnow(),
-        copies_printed=1,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        is_active=True
-    )
+    now = datetime.utcnow()
     
-    db.add(print_job)
+    # Execute raw SQL INSERT to bypass enum handling
+    result = db.execute(text("""
+        INSERT INTO printjob (
+            application_id, license_id, status, priority, 
+            front_pdf_path, back_pdf_path, combined_pdf_path,
+            queued_at, copies_printed, created_at, updated_at, is_active
+        ) VALUES (
+            :application_id, :license_id, :status, :priority,
+            :front_pdf_path, :back_pdf_path, :combined_pdf_path,
+            :queued_at, :copies_printed, :created_at, :updated_at, :is_active
+        ) RETURNING id
+    """), {
+        'application_id': application_id,
+        'license_id': license.id,
+        'status': 'queued',  # Raw lowercase string
+        'priority': 1,
+        'front_pdf_path': mock_file_paths["front_pdf_path"],
+        'back_pdf_path': mock_file_paths["back_pdf_path"],
+        'combined_pdf_path': mock_file_paths["combined_pdf_path"],
+        'queued_at': now,
+        'copies_printed': 1,
+        'created_at': now,
+        'updated_at': now,
+        'is_active': True
+    })
+    
+    print_job_id = result.fetchone()[0]
     db.commit()
-    db.refresh(print_job)
+    
+    # Get the created print job for response
+    print_job = crud.print_job.get(db, id=print_job_id)
     
     # Update application status to queued for printing
     crud.license_application.update(
@@ -1301,28 +1316,43 @@ def create_test_print_job(
     license = crud.license.get(db, id=test_app.approved_license_id)
     citizen = crud.citizen.get(db, id=test_app.citizen_id)
     
-    # Create test print job - bypass schema validation to ensure lowercase status
+    # Create test print job using raw SQL to bypass enum conversion issues
     from datetime import datetime
-    from app.models.license import PrintJob as PrintJobModel
+    from sqlalchemy import text
     
-    print_job = PrintJobModel(
-        application_id=test_app.id,
-        license_id=license.id,
-        status="queued",  # Direct string assignment to bypass enum conversion
-        priority=2,  # High priority for test
-        front_pdf_path=f"/tmp/test_licenses/TEST_{license.license_number}_front.pdf",
-        back_pdf_path=f"/tmp/test_licenses/TEST_{license.license_number}_back.pdf",
-        combined_pdf_path=f"/tmp/test_licenses/TEST_{license.license_number}_combined.pdf",
-        queued_at=datetime.utcnow(),
-        copies_printed=1,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        is_active=True
-    )
+    now = datetime.utcnow()
     
-    db.add(print_job)
+    # Execute raw SQL INSERT to bypass enum handling
+    result = db.execute(text("""
+        INSERT INTO printjob (
+            application_id, license_id, status, priority, 
+            front_pdf_path, back_pdf_path, combined_pdf_path,
+            queued_at, copies_printed, created_at, updated_at, is_active
+        ) VALUES (
+            :application_id, :license_id, :status, :priority,
+            :front_pdf_path, :back_pdf_path, :combined_pdf_path,
+            :queued_at, :copies_printed, :created_at, :updated_at, :is_active
+        ) RETURNING id
+    """), {
+        'application_id': test_app.id,
+        'license_id': license.id,
+        'status': 'queued',  # Raw lowercase string
+        'priority': 2,  # High priority for test
+        'front_pdf_path': f"/tmp/test_licenses/TEST_{license.license_number}_front.pdf",
+        'back_pdf_path': f"/tmp/test_licenses/TEST_{license.license_number}_back.pdf",
+        'combined_pdf_path': f"/tmp/test_licenses/TEST_{license.license_number}_combined.pdf",
+        'queued_at': now,
+        'copies_printed': 1,
+        'created_at': now,
+        'updated_at': now,
+        'is_active': True
+    })
+    
+    print_job_id = result.fetchone()[0]
     db.commit()
-    db.refresh(print_job)
+    
+    # Get the created print job for response
+    print_job = crud.print_job.get(db, id=print_job_id)
     
     # Update application status
     crud.license_application.update(
