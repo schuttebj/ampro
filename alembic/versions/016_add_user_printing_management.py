@@ -50,32 +50,40 @@ def upgrade():
     
     print("Creating printer table...")
     
-    # Create printer type enum
-    printer_type_enum = sa.Enum(
-        'card_printer', 'document_printer', 'photo_printer', 
-        'thermal_printer', 'inkjet_printer', 'laser_printer',
-        name='printertype'
-    )
-    printer_type_enum.create(op.get_bind())
+    # Create printer type enum - check if exists first
+    try:
+        printer_type_enum = sa.Enum(
+            'card_printer', 'document_printer', 'photo_printer', 
+            'thermal_printer', 'inkjet_printer', 'laser_printer',
+            name='printertype'
+        )
+        printer_type_enum.create(op.get_bind(), checkfirst=True)
+        print("Created printertype enum")
+    except Exception as e:
+        print(f"PrinterType enum might already exist: {e}")
     
-    # Create printer status enum
-    printer_status_enum = sa.Enum(
-        'active', 'inactive', 'maintenance', 'offline', 'error',
-        name='printerstatus'
-    )
-    printer_status_enum.create(op.get_bind())
+    # Create printer status enum - check if exists first  
+    try:
+        printer_status_enum = sa.Enum(
+            'active', 'inactive', 'maintenance', 'offline', 'error',
+            name='printerstatus'
+        )
+        printer_status_enum.create(op.get_bind(), checkfirst=True)
+        print("Created printerstatus enum")
+    except Exception as e:
+        print(f"PrinterStatus enum might already exist: {e}")
     
     op.create_table(
         'printer',
         sa.Column('id', sa.Integer(), primary_key=True, index=True),
         sa.Column('name', sa.String(100), nullable=False, index=True),
         sa.Column('code', sa.String(20), nullable=False, unique=True, index=True),
-        sa.Column('printer_type', printer_type_enum, nullable=False),
+        sa.Column('printer_type', sa.Enum('card_printer', 'document_printer', 'photo_printer', 'thermal_printer', 'inkjet_printer', 'laser_printer', name='printertype'), nullable=False),
         sa.Column('model', sa.String(100), nullable=True),
         sa.Column('manufacturer', sa.String(100), nullable=True),
         sa.Column('serial_number', sa.String(100), nullable=True),
         sa.Column('ip_address', sa.String(45), nullable=True),
-        sa.Column('status', printer_status_enum, nullable=False, default='active', index=True),
+        sa.Column('status', sa.Enum('active', 'inactive', 'maintenance', 'offline', 'error', name='printerstatus'), nullable=False, default='active', index=True),
         sa.Column('capabilities', sa.JSON(), nullable=True),
         sa.Column('settings', sa.JSON(), nullable=True),
         sa.Column('location_id', sa.Integer(), sa.ForeignKey('location.id', ondelete='SET NULL'), nullable=True, index=True),
@@ -93,16 +101,20 @@ def upgrade():
     
     print("Adding printing configuration to locations...")
     
-    # Create printing type enum
-    printing_type_enum = sa.Enum(
-        'local', 'centralized', 'hybrid', 'disabled',
-        name='printingtype'
-    )
-    printing_type_enum.create(op.get_bind())
+    # Create printing type enum - check if exists first
+    try:
+        printing_type_enum = sa.Enum(
+            'local', 'centralized', 'hybrid', 'disabled',
+            name='printingtype'
+        )
+        printing_type_enum.create(op.get_bind(), checkfirst=True)
+        print("Created printingtype enum")
+    except Exception as e:
+        print(f"PrintingType enum might already exist: {e}")
     
     # Add printing configuration columns to location table
     op.add_column('location', sa.Column('printing_enabled', sa.Boolean(), nullable=False, default=True))
-    op.add_column('location', sa.Column('printing_type', printing_type_enum, nullable=False, default='local'))
+    op.add_column('location', sa.Column('printing_type', sa.Enum('local', 'centralized', 'hybrid', 'disabled', name='printingtype'), nullable=False, default='local'))
     op.add_column('location', sa.Column('default_print_destination_id', sa.Integer(), sa.ForeignKey('location.id'), nullable=True))
     op.add_column('location', sa.Column('auto_assign_print_jobs', sa.Boolean(), nullable=False, default=True))
     op.add_column('location', sa.Column('max_print_jobs_per_user', sa.Integer(), nullable=False, default=10))
@@ -138,6 +150,7 @@ def upgrade():
             COALESCE(created_at, NOW()) as created_at
         FROM "user" 
         WHERE location_id IS NOT NULL
+        ON CONFLICT (user_id, location_id) DO NOTHING
     """)
     
     print("✅ User printing management system added successfully!")
