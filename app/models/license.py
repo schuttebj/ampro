@@ -118,12 +118,12 @@ class ApplicationStatus(str, enum.Enum):
 
 
 class PrintJobStatus(str, enum.Enum):
-    QUEUED = "queued"                         # Waiting in print queue
-    ASSIGNED = "assigned"                     # Assigned to printer operator
-    PRINTING = "printing"                     # Currently printing
-    COMPLETED = "completed"                   # Successfully printed
-    FAILED = "failed"                         # Print job failed
-    CANCELLED = "cancelled"                   # Print job cancelled
+    QUEUED = "QUEUED"                         # Waiting in print queue
+    ASSIGNED = "ASSIGNED"                     # Assigned to printer operator
+    PRINTING = "PRINTING"                     # Currently printing
+    COMPLETED = "COMPLETED"                   # Successfully printed
+    FAILED = "FAILED"                         # Print job failed
+    CANCELLED = "CANCELLED"                   # Print job cancelled
 
 
 class ShippingStatus(str, enum.Enum):

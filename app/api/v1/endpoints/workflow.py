@@ -192,7 +192,7 @@ def generate_iso_compliant_license_and_queue_print(db: Session, license_id: int,
             print_job_data = {
                 "application_id": application_id,
                 "license_id": license_id,
-                "status": "queued",  # Explicitly set to lowercase to match database enum
+                "status": PrintJobStatus.QUEUED.value,  # Use enum value instead of hardcoded string
                 "front_pdf_path": result["files"]["front_pdf_path"],
                 "back_pdf_path": result["files"]["back_pdf_path"],
                 "combined_pdf_path": result["files"]["combined_pdf_path"],
@@ -419,8 +419,8 @@ def get_print_queue(
     print_jobs = crud.print_job.get_queue(db, skip=skip, limit=limit)
     
     # Get counts
-    queued_count = len([job for job in print_jobs if job.status.value == 'queued'])
-    assigned_count = len([job for job in print_jobs if job.status.value == 'assigned'])
+    queued_count = len([job for job in print_jobs if job.status.value == 'QUEUED'])
+    assigned_count = len([job for job in print_jobs if job.status.value == 'ASSIGNED'])
     
     return {
         "print_jobs": print_jobs,
@@ -1019,7 +1019,7 @@ def print_license_card(
             detail="Print job not found"
         )
     
-    if print_job.status.value != 'printing':
+    if print_job.status.value != 'PRINTING':
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Print job is not in printing status"
@@ -1233,7 +1233,7 @@ def manually_create_print_job(
     """), {
         'application_id': application_id,
         'license_id': license.id,
-        'status': 'queued',  # Raw lowercase string
+        'status': PrintJobStatus.QUEUED.value,  # Use enum value
         'priority': 1,
         'front_pdf_path': mock_file_paths["front_pdf_path"],
         'back_pdf_path': mock_file_paths["back_pdf_path"],
@@ -1336,7 +1336,7 @@ def create_test_print_job(
     """), {
         'application_id': test_app.id,
         'license_id': license.id,
-        'status': 'queued',  # Raw lowercase string
+        'status': PrintJobStatus.QUEUED.value,  # Use enum value
         'priority': 2,  # High priority for test
         'front_pdf_path': f"/tmp/test_licenses/TEST_{license.license_number}_front.pdf",
         'back_pdf_path': f"/tmp/test_licenses/TEST_{license.license_number}_back.pdf",

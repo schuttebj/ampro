@@ -27,17 +27,17 @@ def upgrade():
         ALTER TABLE printjob ALTER COLUMN status TYPE text;
     """)
     
-    # Update any existing values to lowercase
+    # Update any existing values to uppercase to match Python enum
     op.execute("""
         UPDATE printjob 
         SET status = CASE 
-            WHEN UPPER(status) = 'QUEUED' THEN 'queued'
-            WHEN UPPER(status) = 'ASSIGNED' THEN 'assigned'
-            WHEN UPPER(status) = 'PRINTING' THEN 'printing'
-            WHEN UPPER(status) = 'COMPLETED' THEN 'completed'
-            WHEN UPPER(status) = 'FAILED' THEN 'failed'
-            WHEN UPPER(status) = 'CANCELLED' THEN 'cancelled'
-            ELSE 'queued'
+            WHEN UPPER(status) = 'QUEUED' THEN 'QUEUED'
+            WHEN UPPER(status) = 'ASSIGNED' THEN 'ASSIGNED'
+            WHEN UPPER(status) = 'PRINTING' THEN 'PRINTING'
+            WHEN UPPER(status) = 'COMPLETED' THEN 'COMPLETED'
+            WHEN UPPER(status) = 'FAILED' THEN 'FAILED'
+            WHEN UPPER(status) = 'CANCELLED' THEN 'CANCELLED'
+            ELSE 'QUEUED'
         END
         WHERE status IS NOT NULL;
     """)
@@ -47,9 +47,9 @@ def upgrade():
         DROP TYPE IF EXISTS printjobstatus;
     """)
     
-    # Create the new enum type
+    # Create the new enum type with uppercase values to match Python enum
     op.execute("""
-        CREATE TYPE printjobstatus AS ENUM ('queued', 'assigned', 'printing', 'completed', 'failed', 'cancelled');
+        CREATE TYPE printjobstatus AS ENUM ('QUEUED', 'ASSIGNED', 'PRINTING', 'COMPLETED', 'FAILED', 'CANCELLED');
     """)
     
     # Convert the column back to enum type
