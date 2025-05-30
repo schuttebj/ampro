@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app import crud, models, schemas
-from app.api import deps
+from app.api.v1.dependencies import get_db
+from app.core.security import get_current_active_user, get_current_active_superuser
 from app.models.user import UserRole
 from app.models.printer import PrinterStatus, PrinterType
 
@@ -16,14 +17,14 @@ router = APIRouter()
 
 @router.get("/users", response_model=List[schemas.User])
 def get_users(
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
     role: Optional[UserRole] = None,
     location_id: Optional[int] = None,
     search: Optional[str] = None,
     can_print: Optional[bool] = None,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Retrieve users with filtering options.
@@ -45,9 +46,9 @@ def get_users(
 @router.post("/users", response_model=schemas.User)
 def create_user(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     user_in: schemas.UserCreate,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Create new user.
@@ -71,10 +72,10 @@ def create_user(
 @router.put("/users/{user_id}", response_model=schemas.User)
 def update_user(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     user_id: int,
     user_in: schemas.UserUpdate,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Update a user.
@@ -89,8 +90,8 @@ def update_user(
 @router.get("/users/{user_id}", response_model=schemas.User)
 def get_user_by_id(
     user_id: int,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
-    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(get_current_active_superuser),
+    db: Session = Depends(get_db),
 ) -> Any:
     """
     Get a specific user by id.
@@ -104,9 +105,9 @@ def get_user_by_id(
 @router.delete("/users/{user_id}")
 def delete_user(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     user_id: int,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Delete a user.
@@ -126,9 +127,9 @@ def delete_user(
 
 @router.get("/users/printers", response_model=List[schemas.User])
 def get_printer_users(
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     location_id: Optional[int] = None,
-    current_user: models.User = Depends(deps.get_current_active_user),
+    current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Get all users with PRINTER role, optionally filtered by location.
@@ -147,12 +148,12 @@ def get_printer_users(
 @router.post("/users/{user_id}/locations/{location_id}")
 def assign_user_to_location(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     user_id: int,
     location_id: int,
     is_primary: bool = False,
     can_print: bool = False,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Assign a user to a location.
@@ -178,10 +179,10 @@ def assign_user_to_location(
 @router.delete("/users/{user_id}/locations/{location_id}")
 def remove_user_from_location(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     user_id: int,
     location_id: int,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Remove a user from a location.
@@ -197,10 +198,10 @@ def remove_user_from_location(
 @router.put("/users/{user_id}/locations/{location_id}/primary")
 def set_primary_location(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     user_id: int,
     location_id: int,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Set a location as primary for a user.
@@ -216,11 +217,11 @@ def set_primary_location(
 @router.put("/users/{user_id}/locations/{location_id}/print-permission")
 def update_print_permission(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     user_id: int,
     location_id: int,
     can_print: bool,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Update print permission for user at location.
@@ -236,8 +237,8 @@ def update_print_permission(
 @router.get("/users/{user_id}/locations", response_model=List[schemas.UserLocation])
 def get_user_locations(
     user_id: int,
-    db: Session = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Get all locations for a specific user.
@@ -253,8 +254,8 @@ def get_user_locations(
 @router.get("/locations/{location_id}/users", response_model=List[schemas.UserLocation])
 def get_location_users(
     location_id: int,
-    db: Session = Depends(deps.get_db),
-    current_user: models.User = Depends(deps.get_current_active_user),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Get all users at a specific location.
@@ -273,14 +274,14 @@ def get_location_users(
 
 @router.get("/printers", response_model=List[schemas.Printer])
 def get_printers(
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
     location_id: Optional[int] = None,
     status: Optional[PrinterStatus] = None,
     printer_type: Optional[PrinterType] = None,
     search: Optional[str] = None,
-    current_user: models.User = Depends(deps.get_current_active_user),
+    current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Retrieve printers with filtering options.
@@ -302,9 +303,9 @@ def get_printers(
 @router.post("/printers", response_model=schemas.Printer)
 def create_printer(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     printer_in: schemas.PrinterCreate,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Create new printer.
@@ -322,10 +323,10 @@ def create_printer(
 @router.put("/printers/{printer_id}", response_model=schemas.Printer)
 def update_printer(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     printer_id: int,
     printer_in: schemas.PrinterUpdate,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Update a printer.
@@ -340,8 +341,8 @@ def update_printer(
 @router.get("/printers/{printer_id}", response_model=schemas.Printer)
 def get_printer_by_id(
     printer_id: int,
-    current_user: models.User = Depends(deps.get_current_active_user),
-    db: Session = Depends(deps.get_db),
+    current_user: models.User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
 ) -> Any:
     """
     Get a specific printer by id.
@@ -355,9 +356,9 @@ def get_printer_by_id(
 @router.delete("/printers/{printer_id}")
 def delete_printer(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     printer_id: int,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Delete a printer.
@@ -372,11 +373,11 @@ def delete_printer(
 @router.put("/printers/{printer_id}/status")
 def update_printer_status(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     printer_id: int,
     status: PrinterStatus,
     notes: Optional[str] = None,
-    current_user: models.User = Depends(deps.get_current_active_user),
+    current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
     Update printer status.
@@ -392,10 +393,10 @@ def update_printer_status(
 @router.put("/printers/{printer_id}/location/{location_id}")
 def assign_printer_to_location(
     *,
-    db: Session = Depends(deps.get_db),
+    db: Session = Depends(get_db),
     printer_id: int,
     location_id: int,
-    current_user: models.User = Depends(deps.get_current_active_superuser),
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
     """
     Assign printer to a location.
