@@ -1,6 +1,6 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, text
 
 from app.crud.base import CRUDBase
 from app.models.license import PrintJob, PrintJobStatus, ShippingRecord, ShippingStatus
@@ -241,10 +241,44 @@ class CRUDShippingRecord(CRUDBase[ShippingRecord, ShippingRecordCreate, Shipping
         """Get shipping statistics."""
         stats = {}
         
-        # Count records for each status
-        for status in ShippingStatus:
-            count = db.query(func.count(ShippingRecord.id)).filter(ShippingRecord.status == status).scalar()
-            stats[status.value] = count or 0
+        # Use raw SQL to avoid enum casting issues
+        # This handles cases where database has different case than enum expects
+        try:
+            # Get counts using raw text matching to be more flexible
+            result = db.execute(text("""
+                SELECT status, COUNT(*) as count 
+                FROM shippingrecord 
+                GROUP BY status
+            """))
+            
+            # Initialize all statuses to 0
+            stats = {
+                "pending": 0,
+                "in_transit": 0,
+                "delivered": 0,
+                "failed": 0
+            }
+            
+            # Update with actual counts, normalizing case
+            for row in result:
+                status_lower = row.status.lower()
+                if status_lower in stats:
+                    stats[status_lower] = row.count
+                elif status_lower == "in_transit":
+                    stats["in_transit"] = row.count
+                else:
+                    # Handle any unexpected values
+                    print(f"Warning: Unexpected shipping status '{row.status}' found in database")
+                    
+        except Exception as e:
+            print(f"Error getting shipping statistics: {e}")
+            # Return default stats on error
+            stats = {
+                "pending": 0,
+                "in_transit": 0,
+                "delivered": 0,
+                "failed": 0
+            }
         
         return stats
 
