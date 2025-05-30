@@ -6,10 +6,10 @@ from app.models.base import BaseModel
 
 
 class PrintingType(str, enum.Enum):
-    LOCAL = "local"          # Location has its own printers
-    CENTRALIZED = "centralized"  # Print jobs sent to another location
-    HYBRID = "hybrid"        # Some jobs local, some centralized
-    DISABLED = "disabled"    # No printing capabilities
+    LOCAL = "LOCAL"          # Location has its own printers
+    CENTRALIZED = "CENTRALIZED"  # Print jobs sent to another location
+    HYBRID = "HYBRID"        # Some jobs local, some centralized
+    DISABLED = "DISABLED"    # No printing capabilities
 
 
 class Location(BaseModel):

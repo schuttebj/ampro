@@ -1,8 +1,8 @@
-"""Fix printing_type enum values
+"""Fix printing_type to use uppercase values
 
-Revision ID: 018
-Revises: 017
-Create Date: 2025-05-30 12:35:00.000000
+Revision ID: 019
+Revises: 018
+Create Date: 2025-05-30 12:55:00.000000
 
 """
 from alembic import op
@@ -10,18 +10,18 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '018'
-down_revision = '017'
+revision = '019'
+down_revision = '018'
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
     """
-    Fix printing_type enum values by ensuring they are uppercase to match SQLAlchemy expectations.
+    Convert printing_type values to uppercase to match Python enum.
     """
     
-    # Check if location table exists and fix printing_type values
+    # Check if location table exists and convert printing_type values to uppercase
     op.execute("""
         DO $$
         BEGIN
@@ -39,11 +39,15 @@ def upgrade():
                     WHEN LOWER(printing_type) = 'centralized' THEN 'CENTRALIZED'
                     WHEN LOWER(printing_type) = 'hybrid' THEN 'HYBRID'
                     WHEN LOWER(printing_type) = 'disabled' THEN 'DISABLED'
+                    WHEN UPPER(printing_type) = 'LOCAL' THEN 'LOCAL'
+                    WHEN UPPER(printing_type) = 'CENTRALIZED' THEN 'CENTRALIZED'
+                    WHEN UPPER(printing_type) = 'HYBRID' THEN 'HYBRID'
+                    WHEN UPPER(printing_type) = 'DISABLED' THEN 'DISABLED'
                     ELSE 'LOCAL'  -- Default fallback
                 END
                 WHERE printing_type IS NOT NULL;
                 
-                -- Step 4: Now we can safely drop and recreate the enum type with uppercase values
+                -- Step 4: Drop and recreate the enum type with uppercase values
                 DROP TYPE IF EXISTS printingtype;
                 CREATE TYPE printingtype AS ENUM ('LOCAL', 'CENTRALIZED', 'HYBRID', 'DISABLED');
                 
@@ -60,15 +64,33 @@ def upgrade():
 
 def downgrade():
     """
-    Revert to text column
+    Revert to lowercase values
     """
     op.execute("""
         DO $$
         BEGIN
             IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'location') THEN
+                -- Convert back to text
+                ALTER TABLE location ALTER COLUMN printing_type DROP DEFAULT;
                 ALTER TABLE location ALTER COLUMN printing_type TYPE text;
+                
+                -- Convert to lowercase
+                UPDATE location 
+                SET printing_type = CASE 
+                    WHEN printing_type = 'LOCAL' THEN 'local'
+                    WHEN printing_type = 'CENTRALIZED' THEN 'centralized'
+                    WHEN printing_type = 'HYBRID' THEN 'hybrid'
+                    WHEN printing_type = 'DISABLED' THEN 'disabled'
+                    ELSE 'local'
+                END;
+                
+                -- Recreate with lowercase
+                DROP TYPE IF EXISTS printingtype;
+                CREATE TYPE printingtype AS ENUM ('local', 'centralized', 'hybrid', 'disabled');
+                
+                ALTER TABLE location ALTER COLUMN printing_type TYPE printingtype USING printing_type::printingtype;
+                ALTER TABLE location ALTER COLUMN printing_type SET DEFAULT 'local'::printingtype;
             END IF;
         END
         $$;
-        DROP TYPE IF EXISTS printingtype;
     """) 
