@@ -50,28 +50,34 @@ def upgrade():
     
     print("Creating printer table...")
     
-    # Create printer type enum - check if exists first
-    try:
-        printer_type_enum = sa.Enum(
-            'card_printer', 'document_printer', 'photo_printer', 
-            'thermal_printer', 'inkjet_printer', 'laser_printer',
-            name='printertype'
-        )
-        printer_type_enum.create(op.get_bind(), checkfirst=True)
-        print("Created printertype enum")
-    except Exception as e:
-        print(f"PrinterType enum might already exist: {e}")
+    # Create enums using raw SQL with IF NOT EXISTS
+    print("Creating enums if they don't exist...")
+    op.execute("""
+        DO $$ 
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'printertype') THEN
+                CREATE TYPE printertype AS ENUM ('card_printer', 'document_printer', 'photo_printer', 'thermal_printer', 'inkjet_printer', 'laser_printer');
+            END IF;
+        END $$;
+    """)
     
-    # Create printer status enum - check if exists first  
-    try:
-        printer_status_enum = sa.Enum(
-            'active', 'inactive', 'maintenance', 'offline', 'error',
-            name='printerstatus'
-        )
-        printer_status_enum.create(op.get_bind(), checkfirst=True)
-        print("Created printerstatus enum")
-    except Exception as e:
-        print(f"PrinterStatus enum might already exist: {e}")
+    op.execute("""
+        DO $$ 
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'printerstatus') THEN
+                CREATE TYPE printerstatus AS ENUM ('active', 'inactive', 'maintenance', 'offline', 'error');
+            END IF;
+        END $$;
+    """)
+    
+    op.execute("""
+        DO $$ 
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'printingtype') THEN
+                CREATE TYPE printingtype AS ENUM ('local', 'centralized', 'hybrid', 'disabled');
+            END IF;
+        END $$;
+    """)
     
     op.create_table(
         'printer',
@@ -100,17 +106,6 @@ def upgrade():
     # ============================================================================
     
     print("Adding printing configuration to locations...")
-    
-    # Create printing type enum - check if exists first
-    try:
-        printing_type_enum = sa.Enum(
-            'local', 'centralized', 'hybrid', 'disabled',
-            name='printingtype'
-        )
-        printing_type_enum.create(op.get_bind(), checkfirst=True)
-        print("Created printingtype enum")
-    except Exception as e:
-        print(f"PrintingType enum might already exist: {e}")
     
     # Add printing configuration columns to location table
     op.add_column('location', sa.Column('printing_enabled', sa.Boolean(), nullable=False, default=True))
