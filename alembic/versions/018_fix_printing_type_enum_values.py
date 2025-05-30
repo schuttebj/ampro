@@ -26,10 +26,13 @@ def upgrade():
         DO $$
         BEGIN
             IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'location') THEN
-                -- First convert column to text to allow string operations
+                -- Step 1: Remove default value constraint first
+                ALTER TABLE location ALTER COLUMN printing_type DROP DEFAULT;
+                
+                -- Step 2: Convert column to text to allow string operations
                 ALTER TABLE location ALTER COLUMN printing_type TYPE text;
                 
-                -- Now convert any uppercase printing_type values to lowercase
+                -- Step 3: Convert any uppercase printing_type values to lowercase
                 UPDATE location 
                 SET printing_type = CASE 
                     WHEN UPPER(printing_type) = 'LOCAL' THEN 'local'
@@ -40,12 +43,15 @@ def upgrade():
                 END
                 WHERE printing_type IS NOT NULL;
                 
-                -- Drop and recreate the enum type
+                -- Step 4: Now we can safely drop and recreate the enum type
                 DROP TYPE IF EXISTS printingtype;
                 CREATE TYPE printingtype AS ENUM ('local', 'centralized', 'hybrid', 'disabled');
                 
-                -- Convert back to enum
+                -- Step 5: Convert back to enum
                 ALTER TABLE location ALTER COLUMN printing_type TYPE printingtype USING printing_type::printingtype;
+                
+                -- Step 6: Restore default value
+                ALTER TABLE location ALTER COLUMN printing_type SET DEFAULT 'local'::printingtype;
             END IF;
         END
         $$;
