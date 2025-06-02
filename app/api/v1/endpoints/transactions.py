@@ -4,20 +4,20 @@ import io
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from fastapi.encoders import jsonable_encoder
 
 from app import crud
 from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
-from app.models.audit import ActionType, ResourceType
+from app.models.audit import ActionType, ResourceType, Transaction
 from app.models.user import User
-from app.schemas.audit import Transaction
+from app.schemas.audit import Transaction as TransactionSchema
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[Transaction])
+@router.get("/")
 def read_transactions(
     db: Session = Depends(get_db),
     skip: int = 0,
@@ -35,31 +35,71 @@ def read_transactions(
     """
     Retrieve transactions with filtering.
     """
-    # Build filters
-    filters = {}
-    if transaction_type:
-        filters['transaction_type'] = transaction_type
-    if status:
-        filters['status'] = status
-    if citizen_id:
-        filters['citizen_id'] = citizen_id
-    if license_id:
-        filters['license_id'] = license_id
-    if date_from:
-        filters['date_from'] = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
-    if date_to:
-        filters['date_to'] = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
-    if amount_min is not None:
-        filters['amount_min'] = amount_min * 100  # Convert to cents
-    if amount_max is not None:
-        filters['amount_max'] = amount_max * 100  # Convert to cents
+    # Build base query with relationships
+    query = db.query(Transaction).options(
+        joinedload(Transaction.citizen),
+        joinedload(Transaction.user),
+        joinedload(Transaction.license),
+        joinedload(Transaction.application)
+    )
     
-    # Apply filters using existing CRUD methods or extend them
-    if filters:
-        # For now, use basic query - in production, extend CRUD methods for complex filtering
-        transactions = crud.transaction.get_multi(db, skip=skip, limit=limit)
-    else:
-        transactions = crud.transaction.get_multi(db, skip=skip, limit=limit)
+    # Apply filters
+    if transaction_type:
+        query = query.filter(Transaction.transaction_type == transaction_type)
+    if status:
+        query = query.filter(Transaction.status == status)
+    if citizen_id:
+        query = query.filter(Transaction.citizen_id == citizen_id)
+    if license_id:
+        query = query.filter(Transaction.license_id == license_id)
+    if date_from:
+        date_from_parsed = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+        query = query.filter(Transaction.initiated_at >= date_from_parsed)
+    if date_to:
+        date_to_parsed = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+        query = query.filter(Transaction.initiated_at <= date_to_parsed)
+    if amount_min is not None:
+        query = query.filter(Transaction.amount >= amount_min * 100)  # Convert to cents
+    if amount_max is not None:
+        query = query.filter(Transaction.amount <= amount_max * 100)  # Convert to cents
+    
+    # Get total count
+    total = query.count()
+    
+    # Apply pagination and ordering
+    transactions = query.order_by(Transaction.initiated_at.desc()).offset(skip).limit(limit).all()
+    
+    # Convert to dict format that frontend expects
+    items = []
+    for transaction in transactions:
+        item = {
+            "id": transaction.id,
+            "transaction_ref": transaction.transaction_ref,
+            "transaction_type": transaction.transaction_type.value if transaction.transaction_type else None,
+            "status": transaction.status.value if transaction.status else None,
+            "amount": transaction.amount / 100 if transaction.amount else None,  # Convert from cents
+            "initiated_at": transaction.initiated_at.isoformat() if transaction.initiated_at else None,
+            "completed_at": transaction.completed_at.isoformat() if transaction.completed_at else None,
+            "notes": transaction.notes,
+            "citizen": {
+                "id": transaction.citizen.id,
+                "first_name": transaction.citizen.first_name,
+                "last_name": transaction.citizen.last_name,
+                "id_number": transaction.citizen.id_number
+            } if transaction.citizen else None,
+            "user": {
+                "id": transaction.user.id,
+                "full_name": transaction.user.full_name
+            } if transaction.user else None,
+            "license": {
+                "id": transaction.license.id,
+                "license_number": transaction.license.license_number
+            } if transaction.license else None,
+            "application": {
+                "id": transaction.application.id
+            } if transaction.application else None
+        }
+        items.append(item)
     
     # Log action
     crud.audit_log.create(
@@ -68,11 +108,18 @@ def read_transactions(
             "user_id": current_user.id,
             "action_type": ActionType.READ,
             "resource_type": ResourceType.SYSTEM,
-            "description": f"User {current_user.username} retrieved transaction list with filters: {filters}"
+            "description": f"User {current_user.username} retrieved transaction list"
         }
     )
     
-    return transactions
+    # Return paginated response
+    return {
+        "items": items,
+        "total": total,
+        "page": skip // limit + 1,
+        "size": limit,
+        "pages": (total + limit - 1) // limit
+    }
 
 
 @router.get("/export")
@@ -223,7 +270,7 @@ def read_transaction_by_ref(
     return jsonable_encoder(transaction)
 
 
-@router.get("/citizen/{citizen_id}", response_model=List[Transaction])
+@router.get("/citizen/{citizen_id}", response_model=List[TransactionSchema])
 def read_citizen_transactions(
     citizen_id: int,
     db: Session = Depends(get_db),
@@ -258,7 +305,7 @@ def read_citizen_transactions(
     return transactions
 
 
-@router.get("/license/{license_id}", response_model=List[Transaction])
+@router.get("/license/{license_id}", response_model=List[TransactionSchema])
 def read_license_transactions(
     license_id: int,
     db: Session = Depends(get_db),
