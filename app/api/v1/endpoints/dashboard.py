@@ -9,8 +9,7 @@ from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
 from app.models.audit import ActionType, ResourceType
 from app.models.user import User
-from app.models.license import ApplicationStatus, LicenseStatus, PrintJobStatus
-from app.models.shipping import ShippingStatus
+from app.models.license import ApplicationStatus, LicenseStatus, PrintJobStatus, ShippingStatus
 
 router = APIRouter()
 
@@ -50,14 +49,14 @@ def get_dashboard_stats(
         approved_today = db.query(func.count(crud.license_application.model.id)).filter(
             and_(
                 crud.license_application.model.status == ApplicationStatus.APPROVED,
-                func.date(crud.license_application.model.review_date) == today
+                func.date(crud.license_application.model.last_updated) == today
             )
         ).scalar() or 0
         
         rejected_today = db.query(func.count(crud.license_application.model.id)).filter(
             and_(
                 crud.license_application.model.status == ApplicationStatus.REJECTED,
-                func.date(crud.license_application.model.review_date) == today
+                func.date(crud.license_application.model.last_updated) == today
             )
         ).scalar() or 0
         
@@ -94,28 +93,44 @@ def get_dashboard_stats(
         ).scalar() or 0
 
         # Print Jobs Statistics
-        print_stats = crud.print_job.get_statistics(db) if hasattr(crud, 'print_job') else {}
-        queued_print_jobs = print_stats.get("queued", 0)
-        printing_jobs = print_stats.get("printing", 0)
+        queued_print_jobs = db.query(func.count(crud.print_job.model.id)).filter(
+            crud.print_job.model.status == PrintJobStatus.QUEUED
+        ).scalar() or 0
+        
+        printing_jobs = db.query(func.count(crud.print_job.model.id)).filter(
+            crud.print_job.model.status == PrintJobStatus.PRINTING
+        ).scalar() or 0
+        
         completed_today = db.query(func.count(crud.print_job.model.id)).filter(
             and_(
                 crud.print_job.model.status == PrintJobStatus.COMPLETED,
                 func.date(crud.print_job.model.completed_at) == today
             )
-        ).scalar() or 0 if hasattr(crud, 'print_job') else 0
-        failed_print_jobs = print_stats.get("failed", 0)
+        ).scalar() or 0
+        
+        failed_print_jobs = db.query(func.count(crud.print_job.model.id)).filter(
+            crud.print_job.model.status == PrintJobStatus.FAILED
+        ).scalar() or 0
 
         # Shipping Statistics  
-        shipping_stats = crud.shipping_record.get_statistics(db) if hasattr(crud, 'shipping_record') else {}
-        pending_shipping = shipping_stats.get("pending", 0)
-        in_transit = shipping_stats.get("in_transit", 0)
+        pending_shipping = db.query(func.count(crud.shipping_record.model.id)).filter(
+            crud.shipping_record.model.status == ShippingStatus.PENDING
+        ).scalar() or 0
+        
+        in_transit = db.query(func.count(crud.shipping_record.model.id)).filter(
+            crud.shipping_record.model.status == ShippingStatus.IN_TRANSIT
+        ).scalar() or 0
+        
         delivered_today = db.query(func.count(crud.shipping_record.model.id)).filter(
             and_(
                 crud.shipping_record.model.status == ShippingStatus.DELIVERED,
                 func.date(crud.shipping_record.model.delivered_at) == today
             )
-        ).scalar() or 0 if hasattr(crud, 'shipping_record') else 0
-        failed_shipping = shipping_stats.get("failed", 0)
+        ).scalar() or 0
+        
+        failed_shipping = db.query(func.count(crud.shipping_record.model.id)).filter(
+            crud.shipping_record.model.status == ShippingStatus.FAILED
+        ).scalar() or 0
 
         # Compliance Statistics (Mock for now - can be implemented based on ISO compliance data)
         iso_compliant_licenses = db.query(func.count(crud.license.model.id)).filter(
