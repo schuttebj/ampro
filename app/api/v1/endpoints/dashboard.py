@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 
-from app import crud
 from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
 from app.models.audit import ActionType, ResourceType, AuditLog
@@ -158,17 +157,6 @@ def get_dashboard_stats(
             queue_health = "warning"
         else:
             queue_health = "critical"
-
-        # Log the dashboard access
-        crud.audit_log.create(
-            db,
-            obj_in={
-                "user_id": current_user.id,
-                "action_type": ActionType.READ,
-                "resource_type": ResourceType.SYSTEM,
-                "description": f"User {current_user.username} accessed dashboard statistics"
-            }
-        )
 
         return {
             "citizens": {
