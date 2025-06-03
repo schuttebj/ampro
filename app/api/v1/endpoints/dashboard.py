@@ -29,121 +29,157 @@ def get_dashboard_stats(
     
     try:
         # Citizens Statistics
-        total_citizens = db.query(func.count(Citizen.id)).scalar() or 0
-        new_citizens_today = db.query(func.count(Citizen.id)).filter(
-            func.date(Citizen.created_at) == today
-        ).scalar() or 0
-        active_citizens = db.query(func.count(Citizen.id)).filter(
-            Citizen.is_active == True
-        ).scalar() or 0
+        try:
+            total_citizens = db.query(func.count(Citizen.id)).scalar() or 0
+            new_citizens_today = db.query(func.count(Citizen.id)).filter(
+                func.date(Citizen.created_at) == today
+            ).scalar() or 0
+            active_citizens = db.query(func.count(Citizen.id)).filter(
+                Citizen.is_active == True
+            ).scalar() or 0
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error in Citizens Statistics: {str(e)}"
+            )
 
         # Applications Statistics
-        total_applications = db.query(func.count(LicenseApplication.id)).scalar() or 0
-        pending_review = db.query(func.count(LicenseApplication.id)).filter(
-            or_(
-                LicenseApplication.status == ApplicationStatus.SUBMITTED,
-                LicenseApplication.status == ApplicationStatus.UNDER_REVIEW
+        try:
+            total_applications = db.query(func.count(LicenseApplication.id)).scalar() or 0
+            pending_review = db.query(func.count(LicenseApplication.id)).filter(
+                or_(
+                    LicenseApplication.status == ApplicationStatus.SUBMITTED,
+                    LicenseApplication.status == ApplicationStatus.UNDER_REVIEW
+                )
+            ).scalar() or 0
+            
+            approved_today = db.query(func.count(LicenseApplication.id)).filter(
+                and_(
+                    LicenseApplication.status == ApplicationStatus.APPROVED,
+                    func.date(LicenseApplication.last_updated) == today
+                )
+            ).scalar() or 0
+            
+            rejected_today = db.query(func.count(LicenseApplication.id)).filter(
+                and_(
+                    LicenseApplication.status == ApplicationStatus.REJECTED,
+                    func.date(LicenseApplication.last_updated) == today
+                )
+            ).scalar() or 0
+            
+            pending_documents = db.query(func.count(LicenseApplication.id)).filter(
+                LicenseApplication.status == ApplicationStatus.PENDING_DOCUMENTS
+            ).scalar() or 0
+            
+            pending_payment = db.query(func.count(LicenseApplication.id)).filter(
+                LicenseApplication.status == ApplicationStatus.PENDING_PAYMENT
+            ).scalar() or 0
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error in Applications Statistics: {str(e)}"
             )
-        ).scalar() or 0
-        
-        approved_today = db.query(func.count(LicenseApplication.id)).filter(
-            and_(
-                LicenseApplication.status == ApplicationStatus.APPROVED,
-                func.date(LicenseApplication.last_updated) == today
-            )
-        ).scalar() or 0
-        
-        rejected_today = db.query(func.count(LicenseApplication.id)).filter(
-            and_(
-                LicenseApplication.status == ApplicationStatus.REJECTED,
-                func.date(LicenseApplication.last_updated) == today
-            )
-        ).scalar() or 0
-        
-        pending_documents = db.query(func.count(LicenseApplication.id)).filter(
-            LicenseApplication.status == ApplicationStatus.PENDING_DOCUMENTS
-        ).scalar() or 0
-        
-        pending_payment = db.query(func.count(LicenseApplication.id)).filter(
-            LicenseApplication.status == ApplicationStatus.PENDING_PAYMENT
-        ).scalar() or 0
 
         # Licenses Statistics
-        total_active_licenses = db.query(func.count(License.id)).filter(
-            License.status == LicenseStatus.ACTIVE
-        ).scalar() or 0
-        
-        issued_today = db.query(func.count(License.id)).filter(
-            func.date(License.issue_date) == today
-        ).scalar() or 0
-        
-        expiring_30_days = db.query(func.count(License.id)).filter(
-            and_(
-                License.expiry_date.between(today, today + timedelta(days=30)),
+        try:
+            total_active_licenses = db.query(func.count(License.id)).filter(
                 License.status == LicenseStatus.ACTIVE
+            ).scalar() or 0
+            
+            issued_today = db.query(func.count(License.id)).filter(
+                func.date(License.issue_date) == today
+            ).scalar() or 0
+            
+            expiring_30_days = db.query(func.count(License.id)).filter(
+                and_(
+                    License.expiry_date.between(today, today + timedelta(days=30)),
+                    License.status == LicenseStatus.ACTIVE
+                )
+            ).scalar() or 0
+            
+            suspended_licenses = db.query(func.count(License.id)).filter(
+                License.status == LicenseStatus.SUSPENDED
+            ).scalar() or 0
+            
+            pending_collection = db.query(func.count(License.id)).filter(
+                License.status == LicenseStatus.PENDING_COLLECTION
+            ).scalar() or 0
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error in Licenses Statistics: {str(e)}"
             )
-        ).scalar() or 0
-        
-        suspended_licenses = db.query(func.count(License.id)).filter(
-            License.status == LicenseStatus.SUSPENDED
-        ).scalar() or 0
-        
-        pending_collection = db.query(func.count(License.id)).filter(
-            License.status == LicenseStatus.PENDING_COLLECTION
-        ).scalar() or 0
 
         # Print Jobs Statistics
-        queued_print_jobs = db.query(func.count(PrintJob.id)).filter(
-            PrintJob.status == PrintJobStatus.QUEUED
-        ).scalar() or 0
-        
-        printing_jobs = db.query(func.count(PrintJob.id)).filter(
-            PrintJob.status == PrintJobStatus.PRINTING
-        ).scalar() or 0
-        
-        completed_today = db.query(func.count(PrintJob.id)).filter(
-            and_(
-                PrintJob.status == PrintJobStatus.COMPLETED,
-                func.date(PrintJob.completed_at) == today
+        try:
+            queued_print_jobs = db.query(func.count(PrintJob.id)).filter(
+                PrintJob.status == PrintJobStatus.QUEUED
+            ).scalar() or 0
+            
+            printing_jobs = db.query(func.count(PrintJob.id)).filter(
+                PrintJob.status == PrintJobStatus.PRINTING
+            ).scalar() or 0
+            
+            completed_today = db.query(func.count(PrintJob.id)).filter(
+                and_(
+                    PrintJob.status == PrintJobStatus.COMPLETED,
+                    func.date(PrintJob.completed_at) == today
+                )
+            ).scalar() or 0
+            
+            failed_print_jobs = db.query(func.count(PrintJob.id)).filter(
+                PrintJob.status == PrintJobStatus.FAILED
+            ).scalar() or 0
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error in Print Jobs Statistics: {str(e)}"
             )
-        ).scalar() or 0
-        
-        failed_print_jobs = db.query(func.count(PrintJob.id)).filter(
-            PrintJob.status == PrintJobStatus.FAILED
-        ).scalar() or 0
 
         # Shipping Statistics  
-        pending_shipping = db.query(func.count(ShippingRecord.id)).filter(
-            ShippingRecord.status == ShippingStatus.PENDING
-        ).scalar() or 0
-        
-        in_transit = db.query(func.count(ShippingRecord.id)).filter(
-            ShippingRecord.status == ShippingStatus.IN_TRANSIT
-        ).scalar() or 0
-        
-        delivered_today = db.query(func.count(ShippingRecord.id)).filter(
-            and_(
-                ShippingRecord.status == ShippingStatus.DELIVERED,
-                func.date(ShippingRecord.delivered_at) == today
+        try:
+            pending_shipping = db.query(func.count(ShippingRecord.id)).filter(
+                ShippingRecord.status == ShippingStatus.PENDING
+            ).scalar() or 0
+            
+            in_transit = db.query(func.count(ShippingRecord.id)).filter(
+                ShippingRecord.status == ShippingStatus.IN_TRANSIT
+            ).scalar() or 0
+            
+            delivered_today = db.query(func.count(ShippingRecord.id)).filter(
+                and_(
+                    ShippingRecord.status == ShippingStatus.DELIVERED,
+                    func.date(ShippingRecord.delivered_at) == today
+                )
+            ).scalar() or 0
+            
+            failed_shipping = db.query(func.count(ShippingRecord.id)).filter(
+                ShippingRecord.status == ShippingStatus.FAILED
+            ).scalar() or 0
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error in Shipping Statistics: {str(e)}"
             )
-        ).scalar() or 0
-        
-        failed_shipping = db.query(func.count(ShippingRecord.id)).filter(
-            ShippingRecord.status == ShippingStatus.FAILED
-        ).scalar() or 0
 
         # Compliance Statistics (Mock for now - can be implemented based on ISO compliance data)
-        iso_compliant_licenses = db.query(func.count(License.id)).filter(
-            and_(
-                License.iso_document_number.isnot(None),
-                License.iso_document_number != ""
+        try:
+            iso_compliant_licenses = db.query(func.count(License.id)).filter(
+                and_(
+                    License.iso_document_number.isnot(None),
+                    License.iso_document_number != ""
+                )
+            ).scalar() or 0
+            
+            total_checked_licenses = total_active_licenses
+            compliant_rate = (iso_compliant_licenses / total_checked_licenses * 100) if total_checked_licenses > 0 else 0
+            critical_issues = 0  # This would be calculated based on actual compliance issues
+            pending_validation = pending_review  # Approximate
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error in Compliance Statistics: {str(e)}"
             )
-        ).scalar() or 0
-        
-        total_checked_licenses = total_active_licenses
-        compliant_rate = (iso_compliant_licenses / total_checked_licenses * 100) if total_checked_licenses > 0 else 0
-        critical_issues = 0  # This would be calculated based on actual compliance issues
-        pending_validation = pending_review  # Approximate
 
         # System Performance (Mock data - can be implemented with actual monitoring)
         avg_processing_time = 2.5  # This would come from actual processing time tracking
