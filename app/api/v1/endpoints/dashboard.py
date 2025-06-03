@@ -7,9 +7,10 @@ from sqlalchemy import func, and_, or_
 from app import crud
 from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
-from app.models.audit import ActionType, ResourceType
+from app.models.audit import ActionType, ResourceType, AuditLog
 from app.models.user import User
-from app.models.license import ApplicationStatus, LicenseStatus, PrintJobStatus, ShippingStatus
+from app.models.license import ApplicationStatus, LicenseStatus, PrintJobStatus, ShippingStatus, LicenseApplication, License, PrintJob, ShippingRecord
+from app.models.citizen import Citizen
 
 router = APIRouter()
 
@@ -29,114 +30,114 @@ def get_dashboard_stats(
     
     try:
         # Citizens Statistics
-        total_citizens = db.query(func.count(crud.citizen.model.id)).scalar() or 0
-        new_citizens_today = db.query(func.count(crud.citizen.model.id)).filter(
-            func.date(crud.citizen.model.created_at) == today
+        total_citizens = db.query(func.count(Citizen.id)).scalar() or 0
+        new_citizens_today = db.query(func.count(Citizen.id)).filter(
+            func.date(Citizen.created_at) == today
         ).scalar() or 0
-        active_citizens = db.query(func.count(crud.citizen.model.id)).filter(
-            crud.citizen.model.is_active == True
+        active_citizens = db.query(func.count(Citizen.id)).filter(
+            Citizen.is_active == True
         ).scalar() or 0
 
         # Applications Statistics
-        total_applications = db.query(func.count(crud.license_application.model.id)).scalar() or 0
-        pending_review = db.query(func.count(crud.license_application.model.id)).filter(
+        total_applications = db.query(func.count(LicenseApplication.id)).scalar() or 0
+        pending_review = db.query(func.count(LicenseApplication.id)).filter(
             or_(
-                crud.license_application.model.status == ApplicationStatus.SUBMITTED,
-                crud.license_application.model.status == ApplicationStatus.UNDER_REVIEW
+                LicenseApplication.status == ApplicationStatus.SUBMITTED,
+                LicenseApplication.status == ApplicationStatus.UNDER_REVIEW
             )
         ).scalar() or 0
         
-        approved_today = db.query(func.count(crud.license_application.model.id)).filter(
+        approved_today = db.query(func.count(LicenseApplication.id)).filter(
             and_(
-                crud.license_application.model.status == ApplicationStatus.APPROVED,
-                func.date(crud.license_application.model.last_updated) == today
+                LicenseApplication.status == ApplicationStatus.APPROVED,
+                func.date(LicenseApplication.last_updated) == today
             )
         ).scalar() or 0
         
-        rejected_today = db.query(func.count(crud.license_application.model.id)).filter(
+        rejected_today = db.query(func.count(LicenseApplication.id)).filter(
             and_(
-                crud.license_application.model.status == ApplicationStatus.REJECTED,
-                func.date(crud.license_application.model.last_updated) == today
+                LicenseApplication.status == ApplicationStatus.REJECTED,
+                func.date(LicenseApplication.last_updated) == today
             )
         ).scalar() or 0
         
-        pending_documents = db.query(func.count(crud.license_application.model.id)).filter(
-            crud.license_application.model.status == ApplicationStatus.PENDING_DOCUMENTS
+        pending_documents = db.query(func.count(LicenseApplication.id)).filter(
+            LicenseApplication.status == ApplicationStatus.PENDING_DOCUMENTS
         ).scalar() or 0
         
-        pending_payment = db.query(func.count(crud.license_application.model.id)).filter(
-            crud.license_application.model.status == ApplicationStatus.PENDING_PAYMENT
+        pending_payment = db.query(func.count(LicenseApplication.id)).filter(
+            LicenseApplication.status == ApplicationStatus.PENDING_PAYMENT
         ).scalar() or 0
 
         # Licenses Statistics
-        total_active_licenses = db.query(func.count(crud.license.model.id)).filter(
-            crud.license.model.status == LicenseStatus.ACTIVE
+        total_active_licenses = db.query(func.count(License.id)).filter(
+            License.status == LicenseStatus.ACTIVE
         ).scalar() or 0
         
-        issued_today = db.query(func.count(crud.license.model.id)).filter(
-            func.date(crud.license.model.issue_date) == today
+        issued_today = db.query(func.count(License.id)).filter(
+            func.date(License.issue_date) == today
         ).scalar() or 0
         
-        expiring_30_days = db.query(func.count(crud.license.model.id)).filter(
+        expiring_30_days = db.query(func.count(License.id)).filter(
             and_(
-                crud.license.model.expiry_date.between(today, today + timedelta(days=30)),
-                crud.license.model.status == LicenseStatus.ACTIVE
+                License.expiry_date.between(today, today + timedelta(days=30)),
+                License.status == LicenseStatus.ACTIVE
             )
         ).scalar() or 0
         
-        suspended_licenses = db.query(func.count(crud.license.model.id)).filter(
-            crud.license.model.status == LicenseStatus.SUSPENDED
+        suspended_licenses = db.query(func.count(License.id)).filter(
+            License.status == LicenseStatus.SUSPENDED
         ).scalar() or 0
         
-        pending_collection = db.query(func.count(crud.license.model.id)).filter(
-            crud.license.model.status == LicenseStatus.PENDING_COLLECTION
+        pending_collection = db.query(func.count(License.id)).filter(
+            License.status == LicenseStatus.PENDING_COLLECTION
         ).scalar() or 0
 
         # Print Jobs Statistics
-        queued_print_jobs = db.query(func.count(crud.print_job.model.id)).filter(
-            crud.print_job.model.status == PrintJobStatus.QUEUED
+        queued_print_jobs = db.query(func.count(PrintJob.id)).filter(
+            PrintJob.status == PrintJobStatus.QUEUED
         ).scalar() or 0
         
-        printing_jobs = db.query(func.count(crud.print_job.model.id)).filter(
-            crud.print_job.model.status == PrintJobStatus.PRINTING
+        printing_jobs = db.query(func.count(PrintJob.id)).filter(
+            PrintJob.status == PrintJobStatus.PRINTING
         ).scalar() or 0
         
-        completed_today = db.query(func.count(crud.print_job.model.id)).filter(
+        completed_today = db.query(func.count(PrintJob.id)).filter(
             and_(
-                crud.print_job.model.status == PrintJobStatus.COMPLETED,
-                func.date(crud.print_job.model.completed_at) == today
+                PrintJob.status == PrintJobStatus.COMPLETED,
+                func.date(PrintJob.completed_at) == today
             )
         ).scalar() or 0
         
-        failed_print_jobs = db.query(func.count(crud.print_job.model.id)).filter(
-            crud.print_job.model.status == PrintJobStatus.FAILED
+        failed_print_jobs = db.query(func.count(PrintJob.id)).filter(
+            PrintJob.status == PrintJobStatus.FAILED
         ).scalar() or 0
 
         # Shipping Statistics  
-        pending_shipping = db.query(func.count(crud.shipping_record.model.id)).filter(
-            crud.shipping_record.model.status == ShippingStatus.PENDING
+        pending_shipping = db.query(func.count(ShippingRecord.id)).filter(
+            ShippingRecord.status == ShippingStatus.PENDING
         ).scalar() or 0
         
-        in_transit = db.query(func.count(crud.shipping_record.model.id)).filter(
-            crud.shipping_record.model.status == ShippingStatus.IN_TRANSIT
+        in_transit = db.query(func.count(ShippingRecord.id)).filter(
+            ShippingRecord.status == ShippingStatus.IN_TRANSIT
         ).scalar() or 0
         
-        delivered_today = db.query(func.count(crud.shipping_record.model.id)).filter(
+        delivered_today = db.query(func.count(ShippingRecord.id)).filter(
             and_(
-                crud.shipping_record.model.status == ShippingStatus.DELIVERED,
-                func.date(crud.shipping_record.model.delivered_at) == today
+                ShippingRecord.status == ShippingStatus.DELIVERED,
+                func.date(ShippingRecord.delivered_at) == today
             )
         ).scalar() or 0
         
-        failed_shipping = db.query(func.count(crud.shipping_record.model.id)).filter(
-            crud.shipping_record.model.status == ShippingStatus.FAILED
+        failed_shipping = db.query(func.count(ShippingRecord.id)).filter(
+            ShippingRecord.status == ShippingStatus.FAILED
         ).scalar() or 0
 
         # Compliance Statistics (Mock for now - can be implemented based on ISO compliance data)
-        iso_compliant_licenses = db.query(func.count(crud.license.model.id)).filter(
+        iso_compliant_licenses = db.query(func.count(License.id)).filter(
             and_(
-                crud.license.model.iso_document_number.isnot(None),
-                crud.license.model.iso_document_number != ""
+                License.iso_document_number.isnot(None),
+                License.iso_document_number != ""
             )
         ).scalar() or 0
         
@@ -235,26 +236,26 @@ def get_recent_activities(
     try:
         # Get recent audit logs
         recent_logs = (
-            db.query(crud.audit_log.model)
-            .filter(crud.audit_log.model.user_id.isnot(None))  # Only user actions, not system actions
-            .order_by(crud.audit_log.model.created_at.desc())
+            db.query(AuditLog)
+            .filter(AuditLog.user_id.isnot(None))  # Only user actions, not system actions
+            .order_by(AuditLog.timestamp.desc())
             .limit(limit)
             .all()
         )
 
         activities = []
         for log in recent_logs:
-            user = crud.user.get(db, id=log.user_id) if log.user_id else None
+            user = db.query(User).filter(User.id == log.user_id).first() if log.user_id else None
             
             # Map resource types to activity types
             activity_type_map = {
                 ResourceType.APPLICATION: "application",
                 ResourceType.LICENSE: "license", 
                 ResourceType.CITIZEN: "citizen",
-                ResourceType.PRINT_JOB: "print",
-                ResourceType.SHIPPING: "shipping",
+                ResourceType.SYSTEM: "system",
                 ResourceType.USER: "user",
-                ResourceType.SYSTEM: "system"
+                ResourceType.FILE: "file",
+                ResourceType.LOCATION: "location"
             }
             
             # Map action types to status
@@ -262,16 +263,22 @@ def get_recent_activities(
                 ActionType.CREATE: "success",
                 ActionType.UPDATE: "info",
                 ActionType.DELETE: "warning",
-                ActionType.READ: "info"
+                ActionType.READ: "info",
+                ActionType.LOGIN: "success",
+                ActionType.LOGOUT: "info",
+                ActionType.PRINT: "info",
+                ActionType.EXPORT: "info",
+                ActionType.VERIFY: "success",
+                ActionType.GENERATE: "success"
             }
 
             activities.append({
                 "id": log.id,
                 "type": activity_type_map.get(log.resource_type, "system"),
-                "action": log.description,
+                "action": log.description or f"{log.action_type} {log.resource_type}",
                 "entity_id": log.resource_id or "N/A",
                 "user": user.full_name if user else "System",
-                "timestamp": log.created_at.isoformat(),
+                "timestamp": log.timestamp.isoformat(),
                 "status": status_map.get(log.action_type, "info"),
                 "details": log.description
             })
@@ -302,8 +309,8 @@ def get_system_alerts(
         alerts = []
         
         # Check for high queue volumes
-        pending_apps = db.query(func.count(crud.license_application.model.id)).filter(
-            crud.license_application.model.status == ApplicationStatus.SUBMITTED
+        pending_apps = db.query(func.count(LicenseApplication.id)).filter(
+            LicenseApplication.status == ApplicationStatus.SUBMITTED
         ).scalar() or 0
         
         if pending_apps > 100:
@@ -319,13 +326,13 @@ def get_system_alerts(
             })
 
         # Check for expiring licenses
-        expiring_soon = db.query(func.count(crud.license.model.id)).filter(
+        expiring_soon = db.query(func.count(License.id)).filter(
             and_(
-                crud.license.model.expiry_date.between(
+                License.expiry_date.between(
                     datetime.utcnow().date(),
                     datetime.utcnow().date() + timedelta(days=7)
                 ),
-                crud.license.model.status == LicenseStatus.ACTIVE
+                License.status == LicenseStatus.ACTIVE
             )
         ).scalar() or 0
         
@@ -342,22 +349,21 @@ def get_system_alerts(
             })
 
         # Check print job failures
-        if hasattr(crud, 'print_job'):
-            failed_jobs = db.query(func.count(crud.print_job.model.id)).filter(
-                crud.print_job.model.status == PrintJobStatus.FAILED
-            ).scalar() or 0
-            
-            if failed_jobs > 5:
-                alerts.append({
-                    "id": "print_failures",
-                    "type": "error",
-                    "title": "Print Job Failures",
-                    "message": f"{failed_jobs} print jobs have failed. Hardware intervention may be required.",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "actionUrl": "/workflow/print-queue",
-                    "actionLabel": "Check Print Queue",
-                    "dismissible": False
-                })
+        failed_jobs = db.query(func.count(PrintJob.id)).filter(
+            PrintJob.status == PrintJobStatus.FAILED
+        ).scalar() or 0
+        
+        if failed_jobs > 5:
+            alerts.append({
+                "id": "print_failures",
+                "type": "error",
+                "title": "Print Job Failures",
+                "message": f"{failed_jobs} print jobs have failed. Hardware intervention may be required.",
+                "timestamp": datetime.utcnow().isoformat(),
+                "actionUrl": "/workflow/print-queue",
+                "actionLabel": "Check Print Queue",
+                "dismissible": False
+            })
 
         # System maintenance notice (mock)
         alerts.append({
