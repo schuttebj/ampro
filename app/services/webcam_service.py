@@ -9,7 +9,7 @@ import time
 
 from app.services.file_manager import file_manager
 from app import crud
-from app.database import SessionLocal
+from app.db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -175,8 +175,6 @@ class WebcamService:
         """
         try:
             import cv2
-            from app import crud
-            from app.database import SessionLocal
             
             # Get hardware device information from database
             with SessionLocal() as db:
