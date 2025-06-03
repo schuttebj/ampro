@@ -40,17 +40,17 @@ def upgrade():
                 created_at, updated_at, is_active
             ) VALUES 
             (
-                'Default Webcam', 
+                'Primary Webcam', 
                 'WEBCAM001', 
                 'WEBCAM', 
                 'HD Pro Webcam', 
-                'TechCorp', 
-                'TC-WC-001', 
+                'System', 
+                'SYS-WC-001', 
                 '0', 
                 'ACTIVE', 
                 '{"max_resolution": "1920x1080", "formats": ["jpeg", "png"], "fps": 30}',
                 '{"quality": "high", "auto_focus": true, "auto_exposure": true}',
-                'Default webcam device for citizen photo capture',
+                'Primary webcam device (device index 0) for citizen photo capture',
                 0,
                 0,
                 NOW(),
@@ -62,31 +62,13 @@ def upgrade():
                 'WEBCAM002', 
                 'WEBCAM', 
                 'Standard Webcam', 
-                'TechCorp', 
-                'TC-WC-002', 
+                'System', 
+                'SYS-WC-002', 
                 '1', 
                 'ACTIVE', 
                 '{"max_resolution": "1280x720", "formats": ["jpeg", "png"], "fps": 30}',
                 '{"quality": "medium", "auto_focus": true, "auto_exposure": true}',
-                'Secondary webcam device for backup photo capture',
-                0,
-                0,
-                NOW(),
-                NOW(),
-                true
-            ),
-            (
-                'Mobile Webcam Station', 
-                'WEBCAM003', 
-                'WEBCAM', 
-                'Mobile HD Cam', 
-                'MobileTech', 
-                'MT-HD-003', 
-                '2', 
-                'INACTIVE', 
-                '{"max_resolution": "1920x1080", "formats": ["jpeg", "png"], "fps": 60}',
-                '{"quality": "high", "auto_focus": true, "auto_exposure": true, "zoom": true}',
-                'Mobile webcam station for remote locations',
+                'Secondary webcam device (device index 1) for backup photo capture',
                 0,
                 0,
                 NOW(),
@@ -103,5 +85,5 @@ def downgrade():
     """
     op.execute("""
         DELETE FROM hardware 
-        WHERE code IN ('WEBCAM001', 'WEBCAM002', 'WEBCAM003');
+        WHERE code IN ('WEBCAM001', 'WEBCAM002');
     """) 

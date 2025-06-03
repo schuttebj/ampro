@@ -18,4 +18,5 @@ httpx==0.25.1
 email-validator==2.1.0
 requests==2.31.0
 pdf417gen==0.7.1
-reportlab==4.0.7 
+reportlab==4.0.7
+opencv-python==4.8.1.78 

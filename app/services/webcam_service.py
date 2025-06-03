@@ -5,8 +5,11 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pathlib import Path
 import logging
+import time
 
 from app.services.file_manager import file_manager
+from app import crud
+from app.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +23,7 @@ class WebcamService:
     def __init__(self):
         self.storage_path = Path("app/static/storage/photos")
         self.storage_path.mkdir(parents=True, exist_ok=True)
-        self.use_real_webcam = False  # Set to True for real webcam integration
+        self.use_real_webcam = True  # Enable real webcam integration by default
     
     def detect_available_webcams(self) -> List[Dict[str, Any]]:
         """
@@ -172,16 +175,28 @@ class WebcamService:
         """
         try:
             import cv2
+            from app import crud
+            from app.database import SessionLocal
             
-            # Try to open the webcam (using hardware_id as device index)
-            # In a real implementation, you'd map hardware_id to actual device
-            device_index = 0  # Default to first camera for now
+            # Get hardware device information from database
+            with SessionLocal() as db:
+                hardware = crud.hardware.get(db, id=hardware_id)
+                if not hardware:
+                    return {
+                        "success": False,
+                        "error_message": f"Hardware device {hardware_id} not found"
+                    }
+                
+                # Use device_id from hardware record, default to 0 if not set
+                device_index = int(hardware.device_id) if hardware.device_id else 0
+            
+            logger.info(f"Attempting to capture photo using device index {device_index}")
             
             cap = cv2.VideoCapture(device_index)
             if not cap.isOpened():
                 return {
                     "success": False,
-                    "error_message": f"Could not open webcam device {device_index}"
+                    "error_message": f"Could not open webcam device {device_index}. Please check if the webcam is connected and not being used by another application."
                 }
             
             # Set quality parameters
@@ -195,6 +210,9 @@ class WebcamService:
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
             
+            # Allow camera to warm up
+            time.sleep(0.5)
+            
             # Capture frame
             ret, frame = cap.read()
             cap.release()
@@ -202,7 +220,7 @@ class WebcamService:
             if not ret:
                 return {
                     "success": False,
-                    "error_message": "Failed to capture frame from webcam"
+                    "error_message": "Failed to capture frame from webcam. Please ensure the camera is properly connected."
                 }
             
             # Convert frame to bytes
@@ -218,6 +236,8 @@ class WebcamService:
                 }
             
             photo_data = encoded_img.tobytes()
+            
+            logger.info(f"Successfully captured photo from device {device_index}, size: {len(photo_data)} bytes")
             
             return {
                 "success": True,
@@ -235,7 +255,7 @@ class WebcamService:
             logger.error("OpenCV not available for real webcam capture")
             return {
                 "success": False,
-                "error_message": "OpenCV not available for webcam capture"
+                "error_message": "OpenCV not available for webcam capture. Please install opencv-python."
             }
         except Exception as e:
             logger.error(f"Error in real photo capture: {str(e)}")
