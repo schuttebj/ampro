@@ -151,90 +151,152 @@ class FileManager:
             logger.error(f"Error storing uploaded file: {str(e)}")
             raise
     
-    def download_and_store_photo(self, photo_url: str, citizen_id: int) -> Tuple[str, str]:
+    def download_and_store_photo(self, photo_url: str = None, citizen_id: int = None, photo_data: bytes = None) -> Tuple[str, str]:
         """
-        Download photo from URL and store both original and processed versions
+        Download photo from URL or use provided photo data and store both original and processed versions
         
         Args:
-            photo_url: URL of the photo to download
+            photo_url: URL of the photo to download (optional if photo_data provided)
             citizen_id: Citizen ID for filename generation
+            photo_data: Raw photo data (optional if photo_url provided)
         
         Returns:
             Tuple of (original_path, processed_path) relative to storage base
         """
-        if not photo_url:
-            raise ValueError("Photo URL is required")
+        if not photo_url and not photo_data:
+            raise ValueError("Either photo_url or photo_data is required")
         
-        logger.info(f"Downloading/storing photo for citizen {citizen_id} from URL: {photo_url}")
+        if not citizen_id:
+            raise ValueError("Citizen ID is required")
+        
+        logger.info(f"Processing photo for citizen {citizen_id}")
         
         try:
-            # Check if this is a local file URL (either static or API serve endpoint)
-            if photo_url.startswith('/static/storage/'):
-                # This is a direct path to our storage
-                file_path = photo_url.replace('/static/storage/', '')
-                full_path = self.base_dir / file_path
+            # If we have raw photo data, use it directly
+            if photo_data:
+                photo_bytes = photo_data
+                logger.info(f"Using provided photo data ({len(photo_bytes)} bytes)")
+            
+            # Otherwise, download from URL
+            elif photo_url:
+                logger.info(f"Downloading photo from URL: {photo_url}")
                 
-                if not full_path.exists():
-                    logger.warning(f"File not found at {full_path}")
-                    raise FileNotFoundError(f"Local file not found: {file_path}")
-                
-                # Get file bytes
-                with open(full_path, 'rb') as f:
-                    photo_bytes = f.read()
+                # Check if this is a local file URL (either static or API serve endpoint)
+                if photo_url.startswith('/static/storage/'):
+                    # This is a direct path to our storage
+                    file_path = photo_url.replace('/static/storage/', '')
+                    full_path = self.base_dir / file_path
                     
-                logger.info(f"Got photo from static storage: {file_path}")
-                
-            elif photo_url.startswith('/api/v1/files/'):
-                # This is a relative API endpoint URL - construct full URL
-                # Get the base URL from environment or use default
-                base_url = os.environ.get('BASE_URL', 'https://ampro-licence.onrender.com')
-                full_url = f"{base_url}{photo_url}"
-                
-                logger.info(f"Converting relative URL {photo_url} to full URL: {full_url}")
-                
-                # Download the photo from the full URL
-                import requests
-                response = requests.get(full_url, timeout=10)
-                response.raise_for_status()  # Raise exception for HTTP errors
-                photo_bytes = response.content
-                logger.info(f"Downloaded photo from constructed URL: {full_url}")
-                
-            elif photo_url.startswith('/api/v1/files/serve/'):
-                # This is a path via our API serve endpoint
-                file_path = photo_url.replace('/api/v1/files/serve/', '')
-                logger.info(f"Checking API serve path: {self.base_dir / file_path}")
-                
-                # Check if file exists in storage
-                full_path = self.base_dir / file_path
-                if full_path.exists():
+                    if not full_path.exists():
+                        logger.warning(f"File not found at {full_path}")
+                        raise FileNotFoundError(f"Local file not found: {file_path}")
+                    
                     # Get file bytes
                     with open(full_path, 'rb') as f:
                         photo_bytes = f.read()
-                    logger.info(f"Got photo from API serve endpoint: {file_path}")
-                else:
-                    # File doesn't exist in storage, try alternative path (without photos/ prefix)
-                    file_name = os.path.basename(file_path)
-                    alt_path = self.base_dir / "photos" / file_name
-                    logger.info(f"File not found at {full_path}, trying alternative path: {alt_path}")
-                    
-                    if alt_path.exists():
-                        # Get file bytes
-                        with open(alt_path, 'rb') as f:
-                            photo_bytes = f.read()
-                        logger.info(f"Got photo from alternative path: {alt_path}")
-                    else:
-                        # Search for any existing photos for this citizen
-                        existing_photos = list(self.photos_dir.glob(f"citizen_{citizen_id}_*"))
-                        logger.info(f"Searching for existing citizen photos: found {len(existing_photos)} files")
                         
-                        if existing_photos:
-                            # Use the most recent photo
-                            latest_photo = max(existing_photos, key=lambda p: p.stat().st_mtime)
-                            with open(latest_photo, 'rb') as f:
+                    logger.info(f"Got photo from static storage: {file_path}")
+                    
+                elif photo_url.startswith('/api/v1/files/'):
+                    # This is a relative API endpoint URL - construct full URL
+                    # Get the base URL from environment or use default
+                    base_url = os.environ.get('BASE_URL', 'https://ampro-licence.onrender.com')
+                    full_url = f"{base_url}{photo_url}"
+                    
+                    logger.info(f"Converting relative URL {photo_url} to full URL: {full_url}")
+                    
+                    # Download the photo from the full URL
+                    import requests
+                    response = requests.get(full_url, timeout=10)
+                    response.raise_for_status()  # Raise exception for HTTP errors
+                    photo_bytes = response.content
+                    logger.info(f"Downloaded photo from constructed URL: {full_url}")
+                    
+                elif photo_url.startswith('/api/v1/files/serve/'):
+                    # This is a path via our API serve endpoint
+                    file_path = photo_url.replace('/api/v1/files/serve/', '')
+                    logger.info(f"Checking API serve path: {self.base_dir / file_path}")
+                    
+                    # Check if file exists in storage
+                    full_path = self.base_dir / file_path
+                    if full_path.exists():
+                        # Get file bytes
+                        with open(full_path, 'rb') as f:
+                            photo_bytes = f.read()
+                        logger.info(f"Got photo from API serve endpoint: {file_path}")
+                    else:
+                        # File doesn't exist in storage, try alternative path (without photos/ prefix)
+                        file_name = os.path.basename(file_path)
+                        alt_path = self.base_dir / "photos" / file_name
+                        logger.info(f"File not found at {full_path}, trying alternative path: {alt_path}")
+                        
+                        if alt_path.exists():
+                            # Get file bytes
+                            with open(alt_path, 'rb') as f:
                                 photo_bytes = f.read()
-                            logger.info(f"Using existing citizen photo: {latest_photo}")
+                            logger.info(f"Got photo from alternative path: {alt_path}")
                         else:
-                            # Last resort: attempt to create an empty placeholder
+                            # Search for any existing photos for this citizen
+                            existing_photos = list(self.photos_dir.glob(f"citizen_{citizen_id}_*"))
+                            logger.info(f"Searching for existing citizen photos: found {len(existing_photos)} files")
+                            
+                            if existing_photos:
+                                # Use the most recent photo
+                                latest_photo = max(existing_photos, key=lambda p: p.stat().st_mtime)
+                                with open(latest_photo, 'rb') as f:
+                                    photo_bytes = f.read()
+                                logger.info(f"Using existing citizen photo: {latest_photo}")
+                            else:
+                                # Last resort: attempt to create an empty placeholder
+                                try:
+                                    # Create photos directory if it doesn't exist
+                                    self.photos_dir.mkdir(parents=True, exist_ok=True)
+                                    
+                                    # Generate a blank image
+                                    from PIL import Image, ImageDraw
+                                    img = Image.new('RGB', (300, 400), color=(240, 240, 240))
+                                    draw = ImageDraw.Draw(img)
+                                    # Draw a black border
+                                    draw.rectangle([(0, 0), (299, 399)], outline=(0, 0, 0), width=2)
+                                    
+                                    # Save to a BytesIO object
+                                    import io
+                                    img_bytes = io.BytesIO()
+                                    img.save(img_bytes, format='PNG')
+                                    photo_bytes = img_bytes.getvalue()
+                                    logger.info(f"Created blank placeholder image")
+                                except Exception as e:
+                                    logger.error(f"Error creating placeholder: {str(e)}")
+                                    raise FileNotFoundError(f"Local file not found: {file_path}")
+                
+                elif photo_url.startswith(('http://', 'https://')):
+                    # External URL - download the photo
+                    import requests
+                    response = requests.get(photo_url, timeout=10)
+                    response.raise_for_status()  # Raise exception for HTTP errors
+                    photo_bytes = response.content
+                    logger.info(f"Downloaded photo from external URL: {photo_url}")
+                    
+                else:
+                    # Try as a direct relative path
+                    file_path = photo_url.lstrip('/')
+                    full_path = self.base_dir / file_path
+                    
+                    if full_path.exists():
+                        # Get file bytes
+                        with open(full_path, 'rb') as f:
+                            photo_bytes = f.read()
+                        logger.info(f"Got photo from direct path: {file_path}")
+                    else:
+                        # Try another location by checking photos directory directly
+                        filename = os.path.basename(file_path)
+                        alt_path = self.photos_dir / filename
+                        if alt_path.exists():
+                            with open(alt_path, 'rb') as f:
+                                photo_bytes = f.read()
+                            logger.info(f"Got photo from photos directory: {filename}")
+                        else:
+                            # Last resort: just like above, create a placeholder
                             try:
                                 # Create photos directory if it doesn't exist
                                 self.photos_dir.mkdir(parents=True, exist_ok=True)
@@ -251,59 +313,10 @@ class FileManager:
                                 img_bytes = io.BytesIO()
                                 img.save(img_bytes, format='PNG')
                                 photo_bytes = img_bytes.getvalue()
-                                logger.info(f"Created blank placeholder image")
+                                logger.info(f"Created blank placeholder image for {file_path}")
                             except Exception as e:
                                 logger.error(f"Error creating placeholder: {str(e)}")
                                 raise FileNotFoundError(f"Local file not found: {file_path}")
-            
-            elif photo_url.startswith(('http://', 'https://')):
-                # External URL - download the photo
-                import requests
-                response = requests.get(photo_url, timeout=10)
-                response.raise_for_status()  # Raise exception for HTTP errors
-                photo_bytes = response.content
-                logger.info(f"Downloaded photo from external URL: {photo_url}")
-                
-            else:
-                # Try as a direct relative path
-                file_path = photo_url.lstrip('/')
-                full_path = self.base_dir / file_path
-                
-                if full_path.exists():
-                    # Get file bytes
-                    with open(full_path, 'rb') as f:
-                        photo_bytes = f.read()
-                    logger.info(f"Got photo from direct path: {file_path}")
-                else:
-                    # Try another location by checking photos directory directly
-                    filename = os.path.basename(file_path)
-                    alt_path = self.photos_dir / filename
-                    if alt_path.exists():
-                        with open(alt_path, 'rb') as f:
-                            photo_bytes = f.read()
-                        logger.info(f"Got photo from photos directory: {filename}")
-                    else:
-                        # Last resort: just like above, create a placeholder
-                        try:
-                            # Create photos directory if it doesn't exist
-                            self.photos_dir.mkdir(parents=True, exist_ok=True)
-                            
-                            # Generate a blank image
-                            from PIL import Image, ImageDraw
-                            img = Image.new('RGB', (300, 400), color=(240, 240, 240))
-                            draw = ImageDraw.Draw(img)
-                            # Draw a black border
-                            draw.rectangle([(0, 0), (299, 399)], outline=(0, 0, 0), width=2)
-                            
-                            # Save to a BytesIO object
-                            import io
-                            img_bytes = io.BytesIO()
-                            img.save(img_bytes, format='PNG')
-                            photo_bytes = img_bytes.getvalue()
-                            logger.info(f"Created blank placeholder image for {file_path}")
-                        except Exception as e:
-                            logger.error(f"Error creating placeholder: {str(e)}")
-                            raise FileNotFoundError(f"Local file not found: {file_path}")
             
             # Generate unique filenames for storing
             original_filename = f"citizen_{citizen_id}_original_{self._generate_file_hash(photo_bytes)}.jpg"

@@ -58,6 +58,7 @@ class Location(BaseModel):
     user_locations = relationship("UserLocation", back_populates="location", cascade="all, delete-orphan")
     applications = relationship("LicenseApplication", back_populates="location")
     printers = relationship("Printer", back_populates="location")
+    hardware_devices = relationship("Hardware", back_populates="location")
     
     # Self-referential relationship for default print destination
     default_print_destination = relationship("Location", remote_side="Location.id")

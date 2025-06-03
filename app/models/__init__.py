@@ -6,6 +6,7 @@ from .user import User, UserRole
 from .citizen import Citizen
 from .location import Location, PrintingType
 from .printer import Printer, PrinterType, PrinterStatus
+from .hardware import Hardware, HardwareType, HardwareStatus
 from .user_location import UserLocation
 from .license import (
     License, 
@@ -32,6 +33,9 @@ __all__ = [
     "Printer",
     "PrinterType", 
     "PrinterStatus",
+    "Hardware",
+    "HardwareType",
+    "HardwareStatus",
     "UserLocation",
     "License",
     "LicenseCategory",

@@ -7,20 +7,20 @@ from app.models.base import BaseModel
 
 
 class PrinterType(str, enum.Enum):
-    CARD_PRINTER = "card_printer"
-    DOCUMENT_PRINTER = "document_printer"
-    PHOTO_PRINTER = "photo_printer"
-    THERMAL_PRINTER = "thermal_printer"
-    INKJET_PRINTER = "inkjet_printer"
-    LASER_PRINTER = "laser_printer"
+    CARD_PRINTER = "CARD_PRINTER"
+    DOCUMENT_PRINTER = "DOCUMENT_PRINTER"
+    PHOTO_PRINTER = "PHOTO_PRINTER"
+    THERMAL_PRINTER = "THERMAL_PRINTER"
+    INKJET_PRINTER = "INKJET_PRINTER"
+    LASER_PRINTER = "LASER_PRINTER"
 
 
 class PrinterStatus(str, enum.Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    MAINTENANCE = "maintenance"
-    OFFLINE = "offline"
-    ERROR = "error"
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    MAINTENANCE = "MAINTENANCE"
+    OFFLINE = "OFFLINE"
+    ERROR = "ERROR"
 
 
 class Printer(BaseModel):
