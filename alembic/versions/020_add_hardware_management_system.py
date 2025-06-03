@@ -1,7 +1,7 @@
 """add_hardware_management_system
 
 Revision ID: 020_add_hardware_management_system
-Revises: 019_fix_printing_type_to_uppercase
+Revises: 018
 Create Date: 2024-12-19 10:00:00.000000
 
 """
@@ -12,7 +12,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '020_add_hardware_management_system'
-down_revision = '019_fix_printing_type_to_uppercase'
+down_revision = '018'
 branch_labels = None
 depends_on = None
 
