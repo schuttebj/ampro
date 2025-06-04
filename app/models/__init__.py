@@ -3,7 +3,7 @@
 
 from .base import BaseModel
 from .user import User, UserRole
-from .citizen import Citizen
+from .citizen import Citizen, Gender, MaritalStatus, IdentificationType, OfficialLanguage, AddressType
 from .location import Location, PrintingType
 from .printer import Printer, PrinterType, PrinterStatus
 from .hardware import Hardware, HardwareType, HardwareStatus
@@ -15,6 +15,12 @@ from .license import (
     LicenseApplication,
     ApplicationStatus,
     ApplicationType,
+    TransactionType as LicenseTransactionType,
+    CardNoticeStatus,
+    PaymentMethod,
+    PaymentStatus,
+    LicenseFee,
+    Payment,
     PrintJob,
     PrintJobStatus,
     ShippingRecord,
@@ -28,6 +34,11 @@ __all__ = [
     "User", 
     "UserRole",
     "Citizen",
+    "Gender",
+    "MaritalStatus",
+    "IdentificationType",
+    "OfficialLanguage",
+    "AddressType",
     "Location",
     "PrintingType",
     "Printer",
@@ -43,6 +54,12 @@ __all__ = [
     "LicenseApplication",
     "ApplicationStatus", 
     "ApplicationType",
+    "LicenseTransactionType",
+    "CardNoticeStatus",
+    "PaymentMethod",
+    "PaymentStatus",
+    "LicenseFee",
+    "Payment",
     "PrintJob",
     "PrintJobStatus",
     "ShippingRecord",

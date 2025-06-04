@@ -1,4 +1,5 @@
 from typing import Any, List, Dict
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -8,7 +9,7 @@ from app import crud
 from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
 from app.models.audit import ActionType, ResourceType, TransactionType, TransactionStatus
-from app.models.license import ApplicationStatus
+from app.models.license import ApplicationStatus, PaymentMethod
 from app.models.user import User
 from app.schemas.license import (
     LicenseApplication, 
@@ -453,4 +454,301 @@ def read_applications_by_citizen(
         }
     )
     
-    return applications 
+    return applications
+
+
+@router.get("/drafts", response_model=List[Dict])
+def read_draft_applications(
+    db: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 100,
+    citizen_id: int = None,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Get draft applications.
+    """
+    applications = crud.license_application.get_draft_applications(
+        db, citizen_id=citizen_id, skip=skip, limit=limit
+    )
+    
+    # Build response with related data
+    result = []
+    for application in applications:
+        citizen = crud.citizen.get(db, id=application.citizen_id) if application.citizen_id else None
+        
+        app_data = jsonable_encoder(application)
+        app_data["citizen"] = jsonable_encoder(citizen) if citizen else None
+        
+        result.append(app_data)
+    
+    # Log action
+    crud.audit_log.create(
+        db,
+        obj_in={
+            "user_id": current_user.id,
+            "action_type": ActionType.READ,
+            "resource_type": ResourceType.APPLICATION,
+            "description": f"User {current_user.username} viewed draft applications"
+        }
+    )
+    
+    return result
+
+
+@router.post("/{application_id}/submit", response_model=Dict)
+def submit_application(
+    *,
+    db: Session = Depends(get_db),
+    application_id: int,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Submit a draft application.
+    """
+    application = crud.license_application.get(db, id=application_id)
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found",
+        )
+    
+    if not application.is_draft:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Application is not a draft",
+        )
+    
+    # Validate required fields
+    if not application.information_true_correct:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Application declaration must be completed before submission",
+        )
+    
+    # Calculate fee
+    citizen = crud.citizen.get(db, id=application.citizen_id)
+    if citizen:
+        from datetime import date
+        today = date.today()
+        age = today.year - citizen.date_of_birth.year - ((today.month, today.day) < (citizen.date_of_birth.month, citizen.date_of_birth.day))
+        
+        fee_amount = crud.license_fee.calculate_fee_for_application(
+            db,
+            license_category=application.applied_category,
+            transaction_type=application.transaction_type,
+            application_type=application.application_type,
+            applicant_age=age
+        )
+        
+        if fee_amount:
+            application.payment_amount = fee_amount
+    
+    # Submit application
+    application = crud.license_application.submit_application(db, application_id=application_id)
+    
+    # Create transaction record
+    crud.transaction.create(
+        db,
+        obj_in={
+            "transaction_type": "application_submission",
+            "transaction_ref": crud.transaction.generate_transaction_ref(),
+            "status": "completed",
+            "user_id": current_user.id,
+            "citizen_id": application.citizen_id,
+            "application_id": application.id,
+            "completed_at": datetime.utcnow(),
+            "notes": f"Application submitted for review"
+        }
+    )
+    
+    # Log action
+    crud.audit_log.create(
+        db,
+        obj_in={
+            "user_id": current_user.id,
+            "action_type": ActionType.UPDATE,
+            "resource_type": ResourceType.APPLICATION,
+            "resource_id": str(application.id),
+            "description": f"User {current_user.username} submitted application {application.id}"
+        }
+    )
+    
+    return {
+        "message": "Application submitted successfully",
+        "application_id": application.id,
+        "status": application.status,
+        "payment_amount": application.payment_amount,
+        "payment_amount_rands": application.payment_amount / 100 if application.payment_amount else 0
+    }
+
+
+@router.get("/{application_id}/calculate-fee", response_model=Dict)
+def calculate_application_fee(
+    *,
+    db: Session = Depends(get_db),
+    application_id: int,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Calculate fee for a specific application.
+    """
+    application = crud.license_application.get(db, id=application_id)
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found",
+        )
+    
+    citizen = crud.citizen.get(db, id=application.citizen_id)
+    if not citizen:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Citizen not found",
+        )
+    
+    # Calculate age
+    from datetime import date
+    today = date.today()
+    age = today.year - citizen.date_of_birth.year - ((today.month, today.day) < (citizen.date_of_birth.month, citizen.date_of_birth.day))
+    
+    # Calculate fee
+    total_fee = crud.license_fee.calculate_fee_for_application(
+        db,
+        license_category=application.applied_category,
+        transaction_type=application.transaction_type,
+        application_type=application.application_type,
+        applicant_age=age
+    )
+    
+    if total_fee is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No fee configuration found for this application",
+        )
+    
+    # Get fee breakdown
+    fee_record = crud.license_fee.get_by_category_and_type(
+        db,
+        license_category=application.applied_category,
+        transaction_type=application.transaction_type,
+        application_type=application.application_type
+    )
+    
+    result = {
+        "application_id": application_id,
+        "license_category": application.applied_category,
+        "transaction_type": application.transaction_type,
+        "application_type": application.application_type,
+        "applicant_age": age,
+        "total_fee_cents": total_fee,
+        "total_fee_rands": total_fee / 100,
+        "fee_breakdown": {
+            "base_fee_cents": fee_record.base_fee,
+            "processing_fee_cents": fee_record.processing_fee,
+            "delivery_fee_cents": fee_record.delivery_fee,
+            "base_fee_rands": fee_record.base_fee / 100,
+            "processing_fee_rands": fee_record.processing_fee / 100,
+            "delivery_fee_rands": fee_record.delivery_fee / 100,
+        } if fee_record else None
+    }
+    
+    # Log action
+    crud.audit_log.create(
+        db,
+        obj_in={
+            "user_id": current_user.id,
+            "action_type": ActionType.READ,
+            "resource_type": ResourceType.APPLICATION,
+            "resource_id": str(application.id),
+            "description": f"User {current_user.username} calculated fee for application {application.id}"
+        }
+    )
+    
+    return result
+
+
+@router.post("/{application_id}/create-payment", response_model=Dict)
+def create_application_payment(
+    *,
+    db: Session = Depends(get_db),
+    application_id: int,
+    payment_method: str,
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Create a payment for an application.
+    """
+    application = crud.license_application.get(db, id=application_id)
+    if not application:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found",
+        )
+    
+    if not application.payment_amount:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No payment amount set for this application",
+        )
+    
+    # Check if payment already exists
+    existing_payments = crud.payment.get_by_application_id(db, application_id=application_id)
+    paid_payments = [p for p in existing_payments if p.status == "paid"]
+    
+    if paid_payments:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payment already completed for this application",
+        )
+    
+    # Create payment
+    payment_reference = crud.payment.generate_payment_reference(db)
+    
+    try:
+        payment_method_enum = PaymentMethod(payment_method)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid payment method: {payment_method}",
+        )
+    
+    payment = crud.payment.create(
+        db,
+        obj_in={
+            "application_id": application_id,
+            "amount": application.payment_amount,
+            "payment_method": payment_method_enum,
+            "payment_reference": payment_reference,
+            "status": "pending"
+        }
+    )
+    
+    # Update application status to pending payment
+    crud.license_application.update_status(
+        db, 
+        application_id=application_id, 
+        status=ApplicationStatus.PENDING_PAYMENT
+    )
+    
+    # Log action
+    crud.audit_log.create(
+        db,
+        obj_in={
+            "user_id": current_user.id,
+            "action_type": ActionType.CREATE,
+            "resource_type": ResourceType.PAYMENT,
+            "resource_id": str(payment.id),
+            "description": f"User {current_user.username} created payment {payment_reference} for application {application_id}"
+        }
+    )
+    
+    return {
+        "message": "Payment created successfully",
+        "payment_id": payment.id,
+        "payment_reference": payment_reference,
+        "amount_cents": payment.amount,
+        "amount_rands": payment.amount / 100,
+        "payment_method": payment.payment_method,
+        "status": payment.status
+    } 

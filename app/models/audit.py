@@ -27,6 +27,8 @@ class ResourceType(str, enum.Enum):
     LOCATION = "LOCATION"
     FILE = "FILE"
     SYSTEM = "SYSTEM"
+    PAYMENT = "PAYMENT"
+    FEE = "FEE"
 
 
 class AuditLog(BaseModel):
