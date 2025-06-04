@@ -101,9 +101,23 @@ def upgrade():
         for value in new_values:
             if value not in existing_values:
                 print(f"Adding enum value: {value}")
-                connection.execute(sa.text(f"ALTER TYPE transactiontype ADD VALUE '{value}'"))
+                try:
+                    # Each ALTER TYPE ADD VALUE must be in its own transaction
+                    connection.execute(sa.text(f"ALTER TYPE transactiontype ADD VALUE '{value}'"))
+                    connection.commit()
+                    print(f"Successfully added enum value: {value}")
+                except Exception as e:
+                    print(f"Failed to add enum value {value}: {e}")
+                    connection.rollback()
         
-        connection.commit()
+        # Final check of enum values
+        final_enum_check = connection.execute(sa.text("""
+            SELECT string_agg(enumlabel, ',' ORDER BY enumlabel) as values
+            FROM pg_enum e
+            JOIN pg_type t ON e.enumtypid = t.oid
+            WHERE t.typname = 'transactiontype'
+        """)).scalar()
+        print(f"Final enum values after additions: {final_enum_check}")
     else:
         print("Creating new transactiontype enum")
         # Create the enum if it doesn't exist

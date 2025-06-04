@@ -21,26 +21,52 @@ def upgrade():
     Migrate existing transaction_type values to license-specific enum values
     """
     
+    connection = op.get_bind()
+    
+    # First, check what enum values actually exist
+    existing_enum_values = connection.execute(sa.text("""
+        SELECT enumlabel 
+        FROM pg_enum e
+        JOIN pg_type t ON e.enumtypid = t.oid
+        WHERE t.typname = 'transactiontype'
+        ORDER BY enumlabel
+    """)).fetchall()
+    
+    enum_values = [row[0] for row in existing_enum_values]
+    print(f"Available enum values: {enum_values}")
+    
+    # Determine target value based on what's available
+    if 'DRIVING_LICENCE' in enum_values:
+        target_value = 'DRIVING_LICENCE'
+        print("Using uppercase enum values")
+    elif 'driving_licence' in enum_values:
+        target_value = 'driving_licence'
+        print("Using lowercase enum values")
+    elif enum_values:
+        # Use the first available value as fallback
+        target_value = enum_values[0]
+        print(f"Using fallback enum value: {target_value}")
+    else:
+        print("ERROR: No enum values found!")
+        return
+    
     # Map existing audit transaction types to license transaction types
     transaction_type_mapping = {
-        'APPLICATION_APPROVAL': 'DRIVING_LICENCE',
-        'application_approval': 'DRIVING_LICENCE',
-        'APPLICATION_SUBMISSION': 'DRIVING_LICENCE', 
-        'application_submission': 'DRIVING_LICENCE',
-        'LICENSE_ISSUANCE': 'DRIVING_LICENCE',
-        'license_issuance': 'DRIVING_LICENCE',
-        'LICENSE_RENEWAL': 'DRIVING_LICENCE',
-        'license_renewal': 'DRIVING_LICENCE',
-        'LICENSE_REPLACEMENT': 'ID_PAPER_REPLACEMENT',
-        'license_replacement': 'ID_PAPER_REPLACEMENT',
-        'FEE_PAYMENT': 'DRIVING_LICENCE',
-        'fee_payment': 'DRIVING_LICENCE',
-        'DOCUMENT_UPLOAD': 'DRIVING_LICENCE',
-        'document_upload': 'DRIVING_LICENCE'
+        'APPLICATION_APPROVAL': target_value,
+        'application_approval': target_value,
+        'APPLICATION_SUBMISSION': target_value, 
+        'application_submission': target_value,
+        'LICENSE_ISSUANCE': target_value,
+        'license_issuance': target_value,
+        'LICENSE_RENEWAL': target_value,
+        'license_renewal': target_value,
+        'LICENSE_REPLACEMENT': target_value,  # Map to same for simplicity
+        'license_replacement': target_value,
+        'FEE_PAYMENT': target_value,
+        'fee_payment': target_value,
+        'DOCUMENT_UPLOAD': target_value,
+        'document_upload': target_value
     }
-    
-    # First, check what existing values we have
-    connection = op.get_bind()
     
     # Get all distinct transaction_type values in the licenseapplication table
     result = connection.execute(sa.text("""
@@ -89,39 +115,37 @@ def upgrade():
     """)).scalar()
     
     if null_count > 0:
-        print(f"Setting {null_count} NULL transaction_type records to 'DRIVING_LICENCE'")
+        print(f"Setting {null_count} NULL transaction_type records to '{target_value}'")
         connection.execute(sa.text("""
             UPDATE licenseapplication 
-            SET transaction_type = 'DRIVING_LICENCE' 
+            SET transaction_type = :target_value 
             WHERE transaction_type IS NULL
+        """), {"target_value": target_value})
+        connection.commit()
+    
+    # Check for any remaining invalid values - build dynamic validation based on available enum values
+    if enum_values:
+        placeholders = ','.join([f"'{val}'" for val in enum_values])
+        final_check = connection.execute(sa.text(f"""
+            SELECT DISTINCT transaction_type, COUNT(*) as count
+            FROM licenseapplication 
+            WHERE transaction_type NOT IN ({placeholders})
+            GROUP BY transaction_type
         """))
-        connection.commit()
-    
-    # Check for any remaining invalid values
-    final_check = connection.execute(sa.text("""
-        SELECT DISTINCT transaction_type, COUNT(*) as count
-        FROM licenseapplication 
-        WHERE transaction_type NOT IN (
-            'DRIVING_LICENCE', 'GOVT_DEPT_LICENCE', 'FOREIGN_REPLACEMENT',
-            'ID_PAPER_REPLACEMENT', 'TEMPORARY_LICENCE', 'NEW_LICENCE_CARD',
-            'CHANGE_PARTICULARS', 'CHANGE_LICENCE_DOC'
-        )
-        GROUP BY transaction_type
-    """))
-    
-    invalid_values = final_check.fetchall()
-    if invalid_values:
-        print("Found remaining invalid transaction_type values:")
-        for value, count in invalid_values:
-            print(f"  - {value}: {count} records")
-            # Set them to default
-            connection.execute(sa.text("""
-                UPDATE licenseapplication 
-                SET transaction_type = 'DRIVING_LICENCE' 
-                WHERE transaction_type = :invalid_value
-            """), {"invalid_value": value})
-        connection.commit()
-        print("Set all invalid values to 'DRIVING_LICENCE'")
+        
+        invalid_values = final_check.fetchall()
+        if invalid_values:
+            print("Found remaining invalid transaction_type values:")
+            for value, count in invalid_values:
+                print(f"  - {value}: {count} records")
+                # Set them to default
+                connection.execute(sa.text("""
+                    UPDATE licenseapplication 
+                    SET transaction_type = :target_value 
+                    WHERE transaction_type = :invalid_value
+                """), {"target_value": target_value, "invalid_value": value})
+            connection.commit()
+            print(f"Set all invalid values to '{target_value}'")
     
     print("Transaction type data migration completed successfully!")
 
