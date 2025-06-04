@@ -145,14 +145,14 @@ class ApplicationType(str, enum.Enum):
 
 
 class TransactionType(str, enum.Enum):
-    DRIVING_LICENCE = "driving_licence"                           # Regular driving licence
-    GOVT_DEPT_LICENCE = "govt_dept_licence"                      # By virtue of Government Department licence
-    FOREIGN_REPLACEMENT = "foreign_replacement"                  # Replacement of foreign driving licence
-    ID_PAPER_REPLACEMENT = "id_paper_replacement"               # Replacement from ID document/paper card
-    TEMPORARY_LICENCE = "temporary_licence"                      # Temporary driving licence
-    NEW_LICENCE_CARD = "new_licence_card"                       # New driving licence card / Duplicate
-    CHANGE_PARTICULARS = "change_particulars"                   # Change of person particulars (ID, name, address)
-    CHANGE_LICENCE_DOC = "change_licence_doc"                   # Change of driving licence document
+    DRIVING_LICENCE = "DRIVING_LICENCE"                           # Regular driving licence
+    GOVT_DEPT_LICENCE = "GOVT_DEPT_LICENCE"                      # By virtue of Government Department licence
+    FOREIGN_REPLACEMENT = "FOREIGN_REPLACEMENT"                  # Replacement of foreign driving licence
+    ID_PAPER_REPLACEMENT = "ID_PAPER_REPLACEMENT"               # Replacement from ID document/paper card
+    TEMPORARY_LICENCE = "TEMPORARY_LICENCE"                      # Temporary driving licence
+    NEW_LICENCE_CARD = "NEW_LICENCE_CARD"                       # New driving licence card / Duplicate
+    CHANGE_PARTICULARS = "CHANGE_PARTICULARS"                   # Change of person particulars (ID, name, address)
+    CHANGE_LICENCE_DOC = "CHANGE_LICENCE_DOC"                   # Change of driving licence document
 
 
 class CardNoticeStatus(str, enum.Enum):

@@ -162,7 +162,7 @@ def upgrade():
             print(f"Existing transactiontype enum has values: {enum_check}")
             # Use the first existing value as default, or a safe fallback
             if 'driving_licence' in enum_check.lower():
-                default_value = 'driving_licence'
+                default_value = 'DRIVING_LICENCE'
             elif 'DRIVING_LICENCE' in enum_check:
                 default_value = 'DRIVING_LICENCE'
             else:
