@@ -15,7 +15,7 @@ from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
 from app.models.audit import ActionType, ResourceType
 from app.models.user import User
-from app.schemas.citizen import Citizen, CitizenCreate, CitizenUpdate, CitizenWithLicense, CitizenSearch, CitizenApplicationHistory, CitizenWithApplications, CitizenStatusUpdate
+from app.schemas.citizen import Citizen, CitizenCreate, CitizenUpdate
 from app.services.file_manager import file_manager
 
 logger = logging.getLogger(__name__)
