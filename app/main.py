@@ -29,15 +29,16 @@ app = FastAPI(
 
 # Log CORS settings
 logger.info(f"Configuring CORS with specific origins: {settings.BACKEND_CORS_ORIGINS}")
+logger.info("Using permissive CORS for debugging enum issue")
 
-# Set all CORS enabled origins
+# Set all CORS enabled origins with more permissive settings for debugging
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],  # Temporarily use wildcard for debugging
+    allow_credentials=False,  # Must be False when using wildcard
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
     allow_headers=["*"],
-    expose_headers=["Content-Type", "Authorization"],
+    expose_headers=["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
     max_age=600,  # Cache preflight requests for 10 minutes
 )
 
