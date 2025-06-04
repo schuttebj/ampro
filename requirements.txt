@@ -1,23 +1,40 @@
 fastapi==0.104.1
-uvicorn==0.23.2
-sqlalchemy==2.0.23
-pydantic==2.4.2
-pydantic-settings==2.0.3
-python-jose==3.3.0
-passlib==1.7.4
-bcrypt==4.0.1
+uvicorn[standard]==0.24.0
 python-multipart==0.0.6
-psycopg2-binary==2.9.9
-alembic==1.12.1
-python-dotenv==1.0.0
-faker==19.13.0
-qrcode==7.4.2
-pillow==10.1.0
-pytest==7.4.3
-httpx==0.25.1
 email-validator==2.1.0
+passlib[bcrypt]==1.7.4
+tenacity==8.2.3
+pydantic==2.5.0
+pydantic-settings==2.1.0
+emails==0.6
+
+# Database
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Security
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.6
+
+# File handling
+pillow==10.1.0
 requests==2.31.0
+aiofiles==23.2.0
+
+# Document generation
+qrcode==7.4.2
 pdf417gen==0.7.1
 reportlab==4.0.7
-numpy<2
-opencv-python==4.8.1.78 
+
+# Data generation and testing
+faker==19.13.0
+
+# Background tasks
+celery==5.3.4
+redis==5.0.1
+
+# Development
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2 

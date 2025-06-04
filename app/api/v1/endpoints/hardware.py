@@ -11,10 +11,8 @@ from app.models.hardware import HardwareType, HardwareStatus
 from app.models.audit import ActionType, ResourceType
 from app.schemas.hardware import (
     Hardware, HardwareCreate, HardwareUpdate, HardwareWithLocation,
-    HardwareStatusUpdate, WebcamCaptureRequest, WebcamCaptureResponse,
-    HardwareStatistics
+    HardwareStatusUpdate, HardwareStatistics
 )
-from app.services.webcam_service import webcam_service
 
 router = APIRouter()
 
@@ -277,7 +275,7 @@ def get_available_webcams(
     current_user: User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Get available webcams for photo capture.
+    Get available webcams for photo capture from database.
     """
     webcams = crud.hardware.get_available_webcams(
         db,
@@ -285,117 +283,6 @@ def get_available_webcams(
     )
     
     return webcams
-
-
-@router.post("/webcams/capture", response_model=WebcamCaptureResponse)
-def capture_citizen_photo(
-    *,
-    db: Session = Depends(get_db),
-    capture_request: WebcamCaptureRequest,
-    background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_active_user),
-) -> Any:
-    """
-    Capture citizen photo using webcam.
-    """
-    # Verify hardware exists and is available
-    hardware = crud.hardware.get(db, id=capture_request.hardware_id)
-    if not hardware:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Hardware not found",
-        )
-    
-    if hardware.hardware_type != HardwareType.WEBCAM:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Hardware is not a webcam",
-        )
-    
-    if hardware.status != HardwareStatus.ACTIVE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Webcam is not active",
-        )
-    
-    # Verify citizen exists
-    citizen = crud.citizen.get(db, id=capture_request.citizen_id)
-    if not citizen:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Citizen not found",
-        )
-    
-    try:
-        # Capture photo using webcam service
-        result = webcam_service.capture_photo(
-            hardware_id=capture_request.hardware_id,
-            citizen_id=capture_request.citizen_id,
-            quality=capture_request.quality,
-            format=capture_request.format,
-            metadata=capture_request.metadata
-        )
-        
-        if result["success"]:
-            # Update citizen with photo paths
-            crud.citizen.update_photo_paths(
-                db,
-                citizen_id=capture_request.citizen_id,
-                stored_photo_path=result["stored_photo_path"],
-                processed_photo_path=result["processed_photo_path"]
-            )
-            
-            # Record successful hardware usage
-            crud.hardware.record_usage(
-                db,
-                hardware_id=capture_request.hardware_id,
-                success=True
-            )
-            
-            # Log action
-            crud.audit_log.create(
-                db,
-                obj_in={
-                    "user_id": current_user.id,
-                    "action_type": ActionType.CREATE,
-                    "resource_type": ResourceType.CITIZEN,
-                    "resource_id": str(capture_request.citizen_id),
-                    "description": f"User {current_user.username} captured photo for citizen using webcam {hardware.name}"
-                }
-            )
-        else:
-            # Record failed hardware usage
-            crud.hardware.record_usage(
-                db,
-                hardware_id=capture_request.hardware_id,
-                success=False,
-                error_message=result.get("error_message")
-            )
-        
-        return WebcamCaptureResponse(
-            success=result["success"],
-            photo_url=result.get("photo_url"),
-            stored_photo_path=result.get("stored_photo_path"),
-            processed_photo_path=result.get("processed_photo_path"),
-            error_message=result.get("error_message"),
-            hardware_id=capture_request.hardware_id,
-            citizen_id=capture_request.citizen_id,
-            captured_at=datetime.now()
-        )
-        
-    except Exception as e:
-        # Record error
-        crud.hardware.record_usage(
-            db,
-            hardware_id=capture_request.hardware_id,
-            success=False,
-            error_message=str(e)
-        )
-        
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Photo capture failed: {str(e)}",
-        )
 
 
 @router.get("/debug")
@@ -446,7 +333,6 @@ def debug_hardware_data(
         }
         
     except Exception as e:
-        logger.error(f"Error in debug endpoint: {str(e)}")
         return {
             "error": str(e),
             "total_hardware_count": 0,
@@ -496,109 +382,4 @@ def get_hardware_statistics(
         by_type=stats["by_type"],
         by_location=stats["by_location"],
         recent_usage=[]  # TODO: Implement usage log retrieval
-    )
-
-
-@router.get("/webcams/detect")
-def detect_webcams(
-    *,
-    current_user: User = Depends(get_current_active_user),
-) -> Any:
-    """
-    Detect available webcams on the system.
-    """
-    try:
-        webcams = webcam_service.detect_available_webcams()
-        
-        return {
-            "success": True,
-            "webcams": webcams,
-            "count": len(webcams),
-            "detected_at": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error detecting webcams: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Webcam detection failed: {str(e)}",
-        )
-
-
-@router.get("/webcams/{hardware_id}/status")
-def get_webcam_status(
-    *,
-    hardware_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> Any:
-    """
-    Get current status of a specific webcam.
-    """
-    # Verify hardware exists and is a webcam
-    hardware = crud.hardware.get(db, id=hardware_id)
-    if not hardware:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Hardware not found",
-        )
-    
-    if hardware.hardware_type != HardwareType.WEBCAM:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Hardware is not a webcam",
-        )
-    
-    try:
-        status_info = webcam_service.get_webcam_status(hardware_id)
-        
-        return {
-            "success": True,
-            "hardware_id": hardware_id,
-            "hardware_name": hardware.name,
-            "hardware_code": hardware.code,
-            **status_info
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting webcam status: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Status check failed: {str(e)}",
-        )
-
-
-@router.post("/webcams/enable-real-mode")
-def enable_real_webcam_mode(
-    *,
-    enable: bool = True,
-    current_user: User = Depends(get_current_active_user),
-) -> Any:
-    """
-    Enable or disable real webcam mode (admin only).
-    When disabled, uses simulation mode for testing.
-    """
-    # Check if user has admin privileges
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators can change webcam mode",
-        )
-    
-    try:
-        webcam_service.enable_real_webcam(enable)
-        
-        return {
-            "success": True,
-            "real_webcam_enabled": enable,
-            "message": f"Real webcam mode {'enabled' if enable else 'disabled'}",
-            "changed_by": current_user.username,
-            "changed_at": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Error changing webcam mode: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to change webcam mode: {str(e)}",
-        ) 
+    ) 

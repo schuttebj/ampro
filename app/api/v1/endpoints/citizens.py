@@ -1,17 +1,24 @@
 from typing import Any, List, Optional, Dict
+import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks, UploadFile, File, Form
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
+from datetime import datetime
+import os
+import shutil
+from pathlib import Path
 
 from app import crud
 from app.api.v1.dependencies import get_db
 from app.core.security import get_current_active_user
 from app.models.audit import ActionType, ResourceType
 from app.models.user import User
-from app.schemas.citizen import Citizen, CitizenCreate, CitizenUpdate
+from app.schemas.citizen import Citizen, CitizenCreate, CitizenUpdate, CitizenWithLicense, CitizenSearch, CitizenApplicationHistory, CitizenWithApplications, CitizenStatusUpdate
 from app.services.file_manager import file_manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -577,4 +584,83 @@ def get_citizen_photo_status(
         "photo_uploaded_at": citizen.photo_uploaded_at,
         "photo_processed_at": citizen.photo_processed_at,
         "needs_processing": bool(citizen.photo_url and not processed_exists)
-    } 
+    }
+
+
+@router.post("/{citizen_id}/upload-photo")
+async def upload_citizen_photo(
+    citizen_id: int,
+    photo: UploadFile = File(...),
+    hardware_id: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Upload citizen photo captured via browser webcam.
+    """
+    # Verify citizen exists
+    citizen = crud.citizen.get(db, id=citizen_id)
+    if not citizen:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Citizen not found",
+        )
+    
+    # Validate file type
+    if not photo.content_type or not photo.content_type.startswith('image/'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be an image",
+        )
+    
+    try:
+        # Create photos directory if it doesn't exist
+        photos_dir = Path("static/photos/citizens")
+        photos_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate unique filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_extension = photo.filename.split('.')[-1] if '.' in photo.filename else 'jpg'
+        filename = f"citizen_{citizen_id}_{timestamp}.{file_extension}"
+        file_path = photos_dir / filename
+        
+        # Save uploaded file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(photo.file, buffer)
+        
+        # Generate URL for the photo
+        photo_url = f"/static/photos/citizens/{filename}"
+        
+        # Update citizen record with photo path
+        crud.citizen.update_photo_paths(
+            db,
+            citizen_id=citizen_id,
+            stored_photo_path=str(file_path),
+            processed_photo_path=str(file_path)  # For now, same as stored
+        )
+        
+        # Log action
+        crud.audit_log.create(
+            db,
+            obj_in={
+                "user_id": current_user.id,
+                "action_type": ActionType.UPDATE,
+                "resource_type": ResourceType.CITIZEN,
+                "resource_id": str(citizen_id),
+                "description": f"User {current_user.username} uploaded photo for citizen via browser webcam {hardware_id}"
+            }
+        )
+        
+        return {
+            "success": True,
+            "photo_url": photo_url,
+            "stored_photo_path": str(file_path),
+            "message": "Photo uploaded successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error uploading photo for citizen {citizen_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Photo upload failed: {str(e)}",
+        ) 
