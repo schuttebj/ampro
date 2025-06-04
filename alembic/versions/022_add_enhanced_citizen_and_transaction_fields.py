@@ -75,19 +75,45 @@ def upgrade():
         $$;
     """)
     
-    op.execute("""
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'transactiontype') THEN
-                CREATE TYPE transactiontype AS ENUM (
-                    'DRIVING_LICENCE', 'GOVT_DEPT_LICENCE', 'FOREIGN_REPLACEMENT',
-                    'ID_PAPER_REPLACEMENT', 'TEMPORARY_LICENCE', 'NEW_LICENCE_CARD',
-                    'CHANGE_PARTICULARS', 'CHANGE_LICENCE_DOC'
-                );
-            END IF;
-        END
-        $$;
-    """)
+    # Handle transactiontype enum - check if it exists and what values it has
+    connection = op.get_bind()
+    
+    # Check existing enum values
+    existing_enum_check = connection.execute(sa.text("""
+        SELECT string_agg(enumlabel, ',' ORDER BY enumlabel) as values
+        FROM pg_enum e
+        JOIN pg_type t ON e.enumtypid = t.oid
+        WHERE t.typname = 'transactiontype'
+    """)).scalar()
+    
+    if existing_enum_check:
+        print(f"Found existing transactiontype enum with values: {existing_enum_check}")
+        
+        # Add new values to existing enum if they don't exist
+        new_values = [
+            'DRIVING_LICENCE', 'GOVT_DEPT_LICENCE', 'FOREIGN_REPLACEMENT',
+            'ID_PAPER_REPLACEMENT', 'TEMPORARY_LICENCE', 'NEW_LICENCE_CARD',
+            'CHANGE_PARTICULARS', 'CHANGE_LICENCE_DOC'
+        ]
+        
+        existing_values = existing_enum_check.split(',') if existing_enum_check else []
+        
+        for value in new_values:
+            if value not in existing_values:
+                print(f"Adding enum value: {value}")
+                connection.execute(sa.text(f"ALTER TYPE transactiontype ADD VALUE '{value}'"))
+        
+        connection.commit()
+    else:
+        print("Creating new transactiontype enum")
+        # Create the enum if it doesn't exist
+        op.execute("""
+            CREATE TYPE transactiontype AS ENUM (
+                'DRIVING_LICENCE', 'GOVT_DEPT_LICENCE', 'FOREIGN_REPLACEMENT',
+                'ID_PAPER_REPLACEMENT', 'TEMPORARY_LICENCE', 'NEW_LICENCE_CARD',
+                'CHANGE_PARTICULARS', 'CHANGE_LICENCE_DOC'
+            );
+        """)
     
     op.execute("""
         DO $$
@@ -149,32 +175,21 @@ def upgrade():
     
     # Add transaction_type to licenseapplication table - with existence check
     if not column_exists('licenseapplication', 'transaction_type'):
-        # Check if transactiontype enum exists and what values it has
-        connection = op.get_bind()
-        enum_check = connection.execute(sa.text("""
-            SELECT string_agg(enumlabel, ',') as values
+        # Check available enum values after our updates
+        final_enum_check = connection.execute(sa.text("""
+            SELECT string_agg(enumlabel, ',' ORDER BY enumlabel) as values
             FROM pg_enum e
             JOIN pg_type t ON e.enumtypid = t.oid
             WHERE t.typname = 'transactiontype'
         """)).scalar()
         
-        if enum_check:
-            print(f"Existing transactiontype enum has values: {enum_check}")
-            # Use the first existing value as default, or a safe fallback
-            if 'driving_licence' in enum_check.lower():
-                default_value = 'DRIVING_LICENCE'
-            elif 'DRIVING_LICENCE' in enum_check:
-                default_value = 'DRIVING_LICENCE'
-            else:
-                # Use the first available value
-                default_value = enum_check.split(',')[0]
-            print(f"Using default value: {default_value}")
-        else:
-            # No existing enum, use our preferred default
-            default_value = 'DRIVING_LICENCE'
-            print(f"No existing enum found, using default: {default_value}")
+        print(f"Available transactiontype enum values: {final_enum_check}")
         
-        # Add the column without specifying enum values since the type already exists
+        # Use DRIVING_LICENCE as default since we know it's now available
+        default_value = 'DRIVING_LICENCE'
+        print(f"Using default value: {default_value}")
+        
+        # Add the column
         op.add_column('licenseapplication', sa.Column('transaction_type', sa.Enum(name='transactiontype'), nullable=True))
         print("Added column transaction_type to licenseapplication")
         
