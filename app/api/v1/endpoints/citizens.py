@@ -614,29 +614,27 @@ async def upload_citizen_photo(
         )
     
     try:
-        # Create photos directory if it doesn't exist
-        photos_dir = Path("static/photos/citizens")
-        photos_dir.mkdir(parents=True, exist_ok=True)
+        # Read file content
+        content = await photo.read()
         
         # Generate unique filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_extension = photo.filename.split('.')[-1] if '.' in photo.filename else 'jpg'
         filename = f"citizen_{citizen_id}_{timestamp}.{file_extension}"
-        file_path = photos_dir / filename
         
-        # Save uploaded file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(photo.file, buffer)
-        
-        # Generate URL for the photo
-        photo_url = f"/static/photos/citizens/{filename}"
+        # Use file manager to store the photo properly
+        relative_path, file_url = file_manager.store_uploaded_file(
+            content=content,
+            filename=filename,
+            category="photo"
+        )
         
         # Update citizen record with photo path
         crud.citizen.update_photo_paths(
             db,
             citizen_id=citizen_id,
-            stored_photo_path=str(file_path),
-            processed_photo_path=str(file_path)  # For now, same as stored
+            stored_photo_path=relative_path,
+            processed_photo_path=relative_path  # For now, same as stored
         )
         
         # Log action
@@ -653,8 +651,8 @@ async def upload_citizen_photo(
         
         return {
             "success": True,
-            "photo_url": photo_url,
-            "stored_photo_path": str(file_path),
+            "photo_url": file_url,
+            "stored_photo_path": relative_path,
             "message": "Photo uploaded successfully"
         }
         
