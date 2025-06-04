@@ -77,7 +77,19 @@ class WebcamService:
             
         except ImportError:
             logger.warning("OpenCV not available, using mock webcam detection")
-            return self.detect_available_webcams()  # Fall back to mock
+            # Fall back to mock webcam detection instead of calling self recursively
+            return [
+                {
+                    "device_id": "0",
+                    "name": "Default Camera",
+                    "manufacturer": "Virtual",
+                    "capabilities": {
+                        "max_resolution": "1920x1080",
+                        "formats": ["jpeg", "png"],
+                        "fps": 30
+                    }
+                }
+            ]
         except Exception as e:
             logger.error(f"Error detecting webcams: {str(e)}")
             return []
