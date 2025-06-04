@@ -28,17 +28,28 @@ app = FastAPI(
 )
 
 # Log CORS settings
-logger.info(f"Configuring CORS with specific origins: {settings.BACKEND_CORS_ORIGINS}")
-logger.info("Using permissive CORS for debugging enum issue")
+logger.info(f"Configuring CORS with frontend origins for authentication")
 
-# Set all CORS enabled origins with more permissive settings for debugging
+# CORS configuration for production with credentials support
+frontend_origins = [
+    "https://ampro-platform.vercel.app",  # Production frontend
+    "http://localhost:3000",              # Development frontend
+    "http://localhost:3001",              # Alternative dev port
+]
+
+# Add configured backend CORS origins if they exist
+if settings.BACKEND_CORS_ORIGINS:
+    frontend_origins.extend(settings.BACKEND_CORS_ORIGINS)
+
+logger.info(f"Allowing CORS origins: {frontend_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Temporarily use wildcard for debugging
-    allow_credentials=False,  # Must be False when using wildcard
+    allow_origins=frontend_origins,  # Specific origins for credential support
+    allow_credentials=True,          # Enable credentials for authentication
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
     allow_headers=["*"],
-    expose_headers=["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
+    expose_headers=["Content-Type", "Authorization"],
     max_age=600,  # Cache preflight requests for 10 minutes
 )
 
