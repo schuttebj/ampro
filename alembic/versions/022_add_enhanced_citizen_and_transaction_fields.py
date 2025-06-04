@@ -46,7 +46,7 @@ def upgrade():
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'identificationtype') THEN
-                CREATE TYPE identificationtype AS ENUM ('rsa_id', 'traffic_register', 'foreign_id');
+                CREATE TYPE identificationtype AS ENUM ('RSA_ID', 'TRAFFIC_REGISTER', 'FOREIGN_ID');
             END IF;
         END
         $$;
@@ -57,8 +57,8 @@ def upgrade():
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'officiallanguage') THEN
                 CREATE TYPE officiallanguage AS ENUM (
-                    'afrikaans', 'ndebele', 'northern_sotho', 'sotho', 'swazi', 
-                    'tsonga', 'tswana', 'venda', 'xhosa', 'zulu'
+                    'AFRIKAANS', 'NDEBELE', 'NORTHERN_SOTHO', 'SOTHO', 'SWAZI', 
+                    'TSONGA', 'TSWANA', 'VENDA', 'XHOSA', 'ZULU'
                 );
             END IF;
         END
@@ -69,7 +69,7 @@ def upgrade():
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'addresstype') THEN
-                CREATE TYPE addresstype AS ENUM ('postal', 'street');
+                CREATE TYPE addresstype AS ENUM ('POSTAL', 'STREET');
             END IF;
         END
         $$;
@@ -80,9 +80,9 @@ def upgrade():
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'transactiontype') THEN
                 CREATE TYPE transactiontype AS ENUM (
-                    'driving_licence', 'govt_dept_licence', 'foreign_replacement',
-                    'id_paper_replacement', 'temporary_licence', 'new_licence_card',
-                    'change_particulars', 'change_licence_doc'
+                    'DRIVING_LICENCE', 'GOVT_DEPT_LICENCE', 'FOREIGN_REPLACEMENT',
+                    'ID_PAPER_REPLACEMENT', 'TEMPORARY_LICENCE', 'NEW_LICENCE_CARD',
+                    'CHANGE_PARTICULARS', 'CHANGE_LICENCE_DOC'
                 );
             END IF;
         END
@@ -93,20 +93,30 @@ def upgrade():
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'cardnoticestatus') THEN
-                CREATE TYPE cardnoticestatus AS ENUM ('theft', 'loss', 'destruction', 'recovery', 'new_card');
+                CREATE TYPE cardnoticestatus AS ENUM ('THEFT', 'LOSS', 'DESTRUCTION', 'RECOVERY', 'NEW_CARD');
+            END IF;
+        END
+        $$;
+    """)
+    
+    op.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'maritalstatus') THEN
+                CREATE TYPE maritalstatus AS ENUM ('SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED');
             END IF;
         END
         $$;
     """)
     
     # Add enhanced fields to citizen table - with existence checks
-    add_column_if_not_exists('citizen', sa.Column('identification_type', postgresql.ENUM('rsa_id', 'traffic_register', 'foreign_id', name='identificationtype'), nullable=False, server_default='rsa_id'))
+    add_column_if_not_exists('citizen', sa.Column('identification_type', postgresql.ENUM('RSA_ID', 'TRAFFIC_REGISTER', 'FOREIGN_ID', name='identificationtype'), nullable=False, server_default='RSA_ID'))
     add_column_if_not_exists('citizen', sa.Column('country_of_issue', sa.String(), nullable=True))
     add_column_if_not_exists('citizen', sa.Column('nationality', sa.String(), nullable=True, server_default='South African'))
     add_column_if_not_exists('citizen', sa.Column('middle_name', sa.String(), nullable=True))
     add_column_if_not_exists('citizen', sa.Column('initials', sa.String(10), nullable=True))
-    add_column_if_not_exists('citizen', sa.Column('marital_status', postgresql.ENUM('single', 'married', 'divorced', 'widowed', name='maritalstatus'), nullable=True))
-    add_column_if_not_exists('citizen', sa.Column('official_language', postgresql.ENUM('afrikaans', 'ndebele', 'northern_sotho', 'sotho', 'swazi', 'tsonga', 'tswana', 'venda', 'xhosa', 'zulu', name='officiallanguage'), nullable=True))
+    add_column_if_not_exists('citizen', sa.Column('marital_status', postgresql.ENUM('SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED', name='maritalstatus'), nullable=True))
+    add_column_if_not_exists('citizen', sa.Column('official_language', postgresql.ENUM('AFRIKAANS', 'NDEBELE', 'NORTHERN_SOTHO', 'SOTHO', 'SWAZI', 'TSONGA', 'TSWANA', 'VENDA', 'XHOSA', 'ZULU', name='officiallanguage'), nullable=True))
     
     # Enhanced contact fields
     add_column_if_not_exists('citizen', sa.Column('phone_home', sa.String(), nullable=True))
@@ -126,7 +136,7 @@ def upgrade():
     add_column_if_not_exists('citizen', sa.Column('street_postal_code', sa.String(), nullable=True))
     
     # Address preference
-    add_column_if_not_exists('citizen', sa.Column('preferred_address_type', postgresql.ENUM('postal', 'street', name='addresstype'), nullable=True, server_default='postal'))
+    add_column_if_not_exists('citizen', sa.Column('preferred_address_type', postgresql.ENUM('POSTAL', 'STREET', name='addresstype'), nullable=True, server_default='POSTAL'))
     
     # Additional fields
     add_column_if_not_exists('citizen', sa.Column('birth_place', sa.String(), nullable=True))
@@ -138,7 +148,17 @@ def upgrade():
     add_column_if_not_exists('citizen', sa.Column('photo_processed_at', sa.DateTime(), nullable=True))
     
     # Add transaction_type to licenseapplication table - with existence check
-    add_column_if_not_exists('licenseapplication', sa.Column('transaction_type', postgresql.ENUM('driving_licence', 'govt_dept_licence', 'foreign_replacement', 'id_paper_replacement', 'temporary_licence', 'new_licence_card', 'change_particulars', 'change_licence_doc', name='transactiontype'), nullable=False, server_default='driving_licence'))
+    if not column_exists('licenseapplication', 'transaction_type'):
+        # First add the column without default to avoid enum validation issues
+        op.add_column('licenseapplication', sa.Column('transaction_type', postgresql.ENUM('DRIVING_LICENCE', 'GOVT_DEPT_LICENCE', 'FOREIGN_REPLACEMENT', 'ID_PAPER_REPLACEMENT', 'TEMPORARY_LICENCE', 'NEW_LICENCE_CARD', 'CHANGE_PARTICULARS', 'CHANGE_LICENCE_DOC', name='transactiontype'), nullable=True))
+        print("Added column transaction_type to licenseapplication")
+        
+        # Then set the default value and make it not null
+        op.execute("UPDATE licenseapplication SET transaction_type = 'DRIVING_LICENCE' WHERE transaction_type IS NULL")
+        op.alter_column('licenseapplication', 'transaction_type', nullable=False, server_default='DRIVING_LICENCE')
+        print("Set default value and nullable=False for transaction_type")
+    else:
+        print("Column transaction_type already exists in licenseapplication, skipping")
     
     # Add enhanced Section A-D fields to licenseapplication - with existence checks
     add_column_if_not_exists('licenseapplication', sa.Column('photograph_attached', sa.Boolean(), nullable=False, server_default='false'))
@@ -149,7 +169,7 @@ def upgrade():
     add_column_if_not_exists('licenseapplication', sa.Column('refusal_details', sa.Text(), nullable=True))
     
     # Section C fields
-    add_column_if_not_exists('licenseapplication', sa.Column('card_notice_status', postgresql.ENUM('theft', 'loss', 'destruction', 'recovery', 'new_card', name='cardnoticestatus'), nullable=True))
+    add_column_if_not_exists('licenseapplication', sa.Column('card_notice_status', postgresql.ENUM('THEFT', 'LOSS', 'DESTRUCTION', 'RECOVERY', 'NEW_CARD', name='cardnoticestatus'), nullable=True))
     add_column_if_not_exists('licenseapplication', sa.Column('police_report_station', sa.String(), nullable=True))
     add_column_if_not_exists('licenseapplication', sa.Column('police_report_cas_number', sa.String(), nullable=True))
     add_column_if_not_exists('licenseapplication', sa.Column('office_of_issue', sa.String(), nullable=True))
@@ -338,6 +358,16 @@ def downgrade():
         BEGIN
             IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'identificationtype') THEN
                 DROP TYPE identificationtype;
+            END IF;
+        END
+        $$;
+    """)
+    
+    op.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'maritalstatus') THEN
+                DROP TYPE maritalstatus;
             END IF;
         END
         $$;
