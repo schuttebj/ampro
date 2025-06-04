@@ -166,7 +166,7 @@ class LicenseApplicationBase(BaseModel):
     """Base schema for license applications with all Section A-D fields."""
     applied_category: LicenseCategory
     application_type: ApplicationType = ApplicationType.NEW
-    transaction_type: TransactionType = TransactionType.DRIVING_LICENCE
+    transaction_type: TransactionType = TransactionType.APPLICATION_SUBMISSION
     
     # Section A: Applicant Details (additional fields)
     photograph_attached: bool = False
