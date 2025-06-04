@@ -149,14 +149,41 @@ def upgrade():
     
     # Add transaction_type to licenseapplication table - with existence check
     if not column_exists('licenseapplication', 'transaction_type'):
-        # First add the column without default to avoid enum validation issues
-        op.add_column('licenseapplication', sa.Column('transaction_type', postgresql.ENUM('DRIVING_LICENCE', 'GOVT_DEPT_LICENCE', 'FOREIGN_REPLACEMENT', 'ID_PAPER_REPLACEMENT', 'TEMPORARY_LICENCE', 'NEW_LICENCE_CARD', 'CHANGE_PARTICULARS', 'CHANGE_LICENCE_DOC', name='transactiontype'), nullable=True))
+        # Check if transactiontype enum exists and what values it has
+        connection = op.get_bind()
+        enum_check = connection.execute(sa.text("""
+            SELECT string_agg(enumlabel, ',') as values
+            FROM pg_enum e
+            JOIN pg_type t ON e.enumtypid = t.oid
+            WHERE t.typname = 'transactiontype'
+        """)).scalar()
+        
+        if enum_check:
+            print(f"Existing transactiontype enum has values: {enum_check}")
+            # Use the first existing value as default, or a safe fallback
+            if 'driving_licence' in enum_check.lower():
+                default_value = 'driving_licence'
+            elif 'DRIVING_LICENCE' in enum_check:
+                default_value = 'DRIVING_LICENCE'
+            else:
+                # Use the first available value
+                default_value = enum_check.split(',')[0]
+            print(f"Using default value: {default_value}")
+        else:
+            # No existing enum, use our preferred default
+            default_value = 'DRIVING_LICENCE'
+            print(f"No existing enum found, using default: {default_value}")
+        
+        # Add the column without specifying enum values since the type already exists
+        op.add_column('licenseapplication', sa.Column('transaction_type', sa.Enum(name='transactiontype'), nullable=True))
         print("Added column transaction_type to licenseapplication")
         
-        # Then set the default value and make it not null
-        op.execute("UPDATE licenseapplication SET transaction_type = 'DRIVING_LICENCE' WHERE transaction_type IS NULL")
-        op.alter_column('licenseapplication', 'transaction_type', nullable=False, server_default='DRIVING_LICENCE')
-        print("Set default value and nullable=False for transaction_type")
+        # Set the default value for existing records
+        op.execute(f"UPDATE licenseapplication SET transaction_type = '{default_value}' WHERE transaction_type IS NULL")
+        
+        # Make the column not null and set server default
+        op.alter_column('licenseapplication', 'transaction_type', nullable=False, server_default=default_value)
+        print(f"Set default value '{default_value}' and nullable=False for transaction_type")
     else:
         print("Column transaction_type already exists in licenseapplication, skipping")
     
