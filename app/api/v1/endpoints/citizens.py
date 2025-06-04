@@ -129,6 +129,7 @@ def create_citizen(
 def search_citizens(
     *,
     db: Session = Depends(get_db),
+    q: Optional[str] = Query(None, description="General search query (ID number or name)"),
     id_number: Optional[str] = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
@@ -140,6 +141,7 @@ def search_citizens(
     """
     Search citizens by ID number or name. By default only searches active citizens.
     Uses more precise matching logic.
+    Supports both general 'q' parameter and specific field parameters.
     """
     from app.models.citizen import Citizen as CitizenModel
     
@@ -148,6 +150,25 @@ def search_citizens(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admin users can search inactive citizens",
         )
+    
+    # If general query 'q' is provided, parse it intelligently
+    if q and q.strip():
+        q = q.strip()
+        
+        # If it's all digits and long enough, treat as ID number
+        if q.isdigit() and len(q) >= 4:
+            id_number = q
+        else:
+            # Split by spaces for name search
+            name_parts = q.split()
+            if len(name_parts) == 1:
+                # Single term - could be first or last name
+                first_name = name_parts[0]
+                last_name = name_parts[0]  # Search both fields with same term
+            elif len(name_parts) >= 2:
+                # Multiple terms - first word is first name, rest is last name
+                first_name = name_parts[0]
+                last_name = " ".join(name_parts[1:])
     
     # Build base query
     query = db.query(CitizenModel)
@@ -168,22 +189,32 @@ def search_citizens(
             )
         )
     
-    # Search by name - only if we have both first and last name, use AND logic
+    # Search by name - handle the logic for general 'q' vs specific fields differently
     name_conditions = []
-    if first_name:
-        name_conditions.append(CitizenModel.first_name.ilike(f"%{first_name}%"))
+    if first_name and last_name and first_name == last_name:
+        # This is from general 'q' with single term - search either field
+        name_conditions.append(
+            or_(
+                CitizenModel.first_name.ilike(f"%{first_name}%"),
+                CitizenModel.last_name.ilike(f"%{last_name}%")
+            )
+        )
+    else:
+        # Specific field searches or multi-term general search
+        if first_name:
+            name_conditions.append(CitizenModel.first_name.ilike(f"%{first_name}%"))
+        
+        if last_name:
+            name_conditions.append(CitizenModel.last_name.ilike(f"%{last_name}%"))
     
-    if last_name:
-        name_conditions.append(CitizenModel.last_name.ilike(f"%{last_name}%"))
-    
-    # If we have both first and last name, use AND (more precise)
-    # If we have only one, use OR (less precise but acceptable for single terms)
-    if len(name_conditions) >= 2:
-        # Both first and last name provided - use AND for precision
-        search_conditions.append(and_(*name_conditions))
-    elif len(name_conditions) == 1:
-        # Only one name field provided - add it directly
-        search_conditions.extend(name_conditions)
+    # Add name conditions to search
+    if name_conditions:
+        if len(name_conditions) >= 2 and first_name != last_name:
+            # Both first and last name provided with different values - use AND for precision
+            search_conditions.append(and_(*name_conditions))
+        else:
+            # Single name condition or same term for both - add directly
+            search_conditions.extend(name_conditions)
     
     # Apply search conditions
     if search_conditions:
@@ -194,6 +225,7 @@ def search_citizens(
             results = query.offset(skip).limit(limit).all()
         except Exception as e:
             # Handle database errors gracefully
+            logger.error(f"Database error during citizen search: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Database error during search: {str(e)}"
@@ -202,9 +234,17 @@ def search_citizens(
         results = []
     
     # Log action
-    search_terms = ", ".join(
-        [f"{k}: {v}" for k, v in {"id_number": id_number, "first_name": first_name, "last_name": last_name}.items() if v]
-    )
+    search_terms = []
+    if q:
+        search_terms.append(f"q: {q}")
+    if id_number and not q:
+        search_terms.append(f"id_number: {id_number}")
+    if first_name and not q:
+        search_terms.append(f"first_name: {first_name}")
+    if last_name and not q:
+        search_terms.append(f"last_name: {last_name}")
+    
+    search_terms_str = ", ".join(search_terms) if search_terms else "no search terms"
     
     try:
         crud.audit_log.create(
@@ -213,11 +253,12 @@ def search_citizens(
                 "user_id": current_user.id,
                 "action_type": ActionType.READ,
                 "resource_type": ResourceType.CITIZEN,
-                "description": f"User {current_user.username} searched {'all' if include_inactive else 'active'} citizens by {search_terms}, found {len(results)} results"
+                "description": f"User {current_user.username} searched {'all' if include_inactive else 'active'} citizens by {search_terms_str}, found {len(results)} results"
             }
         )
     except Exception as e:
         # Don't fail the search if audit logging fails
+        logger.warning(f"Failed to log citizen search: {str(e)}")
         pass
     
     return results
