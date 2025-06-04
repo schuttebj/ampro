@@ -145,14 +145,14 @@ class ApplicationType(str, enum.Enum):
 
 
 class TransactionType(str, enum.Enum):
-    DRIVING_LICENCE = "DRIVING_LICENCE"                           # Regular driving licence
-    GOVT_DEPT_LICENCE = "GOVT_DEPT_LICENCE"                      # By virtue of Government Department licence
-    FOREIGN_REPLACEMENT = "FOREIGN_REPLACEMENT"                  # Replacement of foreign driving licence
-    ID_PAPER_REPLACEMENT = "ID_PAPER_REPLACEMENT"               # Replacement from ID document/paper card
-    TEMPORARY_LICENCE = "TEMPORARY_LICENCE"                      # Temporary driving licence
-    NEW_LICENCE_CARD = "NEW_LICENCE_CARD"                       # New driving licence card / Duplicate
-    CHANGE_PARTICULARS = "CHANGE_PARTICULARS"                   # Change of person particulars (ID, name, address)
-    CHANGE_LICENCE_DOC = "CHANGE_LICENCE_DOC"                   # Change of driving licence document
+    APPLICATION_APPROVAL = "APPLICATION_APPROVAL"
+    APPLICATION_SUBMISSION = "APPLICATION_SUBMISSION"
+    APPLICATION_REJECTION = "APPLICATION_REJECTION"
+    DOCUMENT_UPLOAD = "DOCUMENT_UPLOAD"
+    FEE_PAYMENT = "FEE_PAYMENT"
+    LICENSE_ISSUANCE = "LICENSE_ISSUANCE"
+    LICENSE_RENEWAL = "LICENSE_RENEWAL"
+    LICENSE_REPLACEMENT = "LICENSE_REPLACEMENT"
 
 
 class CardNoticeStatus(str, enum.Enum):
@@ -254,7 +254,7 @@ class LicenseApplication(BaseModel):
     applied_category = Column(Enum(LicenseCategory), nullable=False)
     status = Column(Enum(ApplicationStatus), default=ApplicationStatus.APPLIED, nullable=False)
     application_type = Column(Enum(ApplicationType), default=ApplicationType.NEW, nullable=False)
-    transaction_type = Column(Enum(TransactionType), default=TransactionType.DRIVING_LICENCE, nullable=False)
+    transaction_type = Column(Enum(TransactionType), default=TransactionType.APPLICATION_SUBMISSION, nullable=False)
     
     # Application details
     application_date = Column(DateTime, default=datetime.utcnow, nullable=False)
