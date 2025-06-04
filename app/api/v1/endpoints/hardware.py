@@ -398,6 +398,64 @@ def capture_citizen_photo(
         )
 
 
+@router.get("/debug")
+def debug_hardware_data(
+    *,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> Any:
+    """
+    Debug endpoint to check what hardware is in the database.
+    """
+    try:
+        # Get all hardware
+        all_hardware = crud.hardware.get_multi(db, limit=100)
+        
+        # Get webcam hardware specifically
+        webcam_hardware = crud.hardware.get_multi(
+            db,
+            filters={"hardware_type": HardwareType.WEBCAM},
+            limit=100
+        )
+        
+        return {
+            "total_hardware_count": len(all_hardware),
+            "webcam_count": len(webcam_hardware),
+            "all_hardware": [
+                {
+                    "id": hw.id,
+                    "name": hw.name,
+                    "code": hw.code,
+                    "hardware_type": hw.hardware_type,
+                    "status": hw.status,
+                    "device_id": hw.device_id
+                }
+                for hw in all_hardware
+            ],
+            "webcam_hardware": [
+                {
+                    "id": hw.id,
+                    "name": hw.name,
+                    "code": hw.code,
+                    "hardware_type": hw.hardware_type,
+                    "status": hw.status,
+                    "device_id": hw.device_id
+                }
+                for hw in webcam_hardware
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {str(e)}")
+        return {
+            "error": str(e),
+            "total_hardware_count": 0,
+            "webcam_count": 0,
+            "all_hardware": [],
+            "webcam_hardware": []
+        }
+
+
 @router.get("/statistics", response_model=HardwareStatistics)
 def get_hardware_statistics(
     *,
