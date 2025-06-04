@@ -2,7 +2,12 @@
 
 from .user import User, UserCreate, UserUpdate, UserInDB
 from .citizen import Citizen, CitizenCreate, CitizenUpdate, CitizenInDB
-from .license import License, LicenseCreate, LicenseUpdate, LicenseInDBBase, LicenseApplication, LicenseApplicationCreate, LicenseApplicationUpdate, LicenseApplicationInDBBase
+from .license import (
+    License, LicenseCreate, LicenseUpdate, LicenseInDBBase, 
+    LicenseApplication, LicenseApplicationCreate, LicenseApplicationUpdate,
+    LicenseFee, LicenseFeeCreate, LicenseFeeUpdate,
+    Payment, PaymentCreate, PaymentUpdate
+)
 from .location import Location, LocationCreate, LocationUpdate, LocationInDBBase
 from .print_job import (
     PrintJob, PrintJobCreate, PrintJobUpdate, PrintJobInDB,
@@ -21,7 +26,9 @@ __all__ = [
     "Citizen", "CitizenCreate", "CitizenUpdate", "CitizenInDB",
     # License schemas
     "License", "LicenseCreate", "LicenseUpdate", "LicenseInDBBase",
-    "LicenseApplication", "LicenseApplicationCreate", "LicenseApplicationUpdate", "LicenseApplicationInDBBase",
+    "LicenseApplication", "LicenseApplicationCreate", "LicenseApplicationUpdate",
+    "LicenseFee", "LicenseFeeCreate", "LicenseFeeUpdate",
+    "Payment", "PaymentCreate", "PaymentUpdate",
     # Location schemas
     "Location", "LocationCreate", "LocationUpdate", "LocationInDBBase",
     # Print job schemas
